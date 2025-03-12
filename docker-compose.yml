@@ -1,0 +1,16 @@
+services:
+  app:
+    build: .
+    image: entrlab-wa  # Explicit image name, can be changed
+    ports:
+      - "3000:3000"  # Expose port 3000 from container to host
+    volumes:
+      - ./data/wwebjs_auth:/app/.wwebjs_auth  # Local paths for persistent storage
+      - ./data/wwebjs_cache:/app/.wwebjs_cache  # Local paths for persistent storage
+    env_file:
+      - .env  # Load environment variables from a .env file
+    environment:
+      NODE_ENV: production  # Set additional environment variables
+      CHROMIUM_PATH: /usr/bin/chromium  # Set Chromium path
+    command: "node index.js"  # Command to run when the container starts
+    restart: unless-stopped  # Automatically restart the container unless stopped manually
