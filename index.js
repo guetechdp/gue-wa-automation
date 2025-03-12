@@ -5,6 +5,9 @@ const loki = require('lokijs');
 const axios = require('axios');
 require('dotenv').config();
 
+// Ensure Railway Persistent Storage is used
+const SESSION_PATH = "/app/.wwebjs_auth"; 
+
 productionmode = false
 
 if(process.env.NODE_ENV == 'production'){
@@ -164,7 +167,9 @@ async function getPreviousMessages(messages, timestamp) {
 
 // Updated Puppeteer Configuration
 const client = new Client({
-    authStrategy: new LocalAuth(),
+    authStrategy: new LocalAuth({
+        dataPath: SESSION_PATH  // Force storage in /app
+    }),
     puppeteer: {
         headless: true,  // Optional: Run in headless mode for production
         args: ['--no-sandbox', '--disable-setuid-sandbox'],
