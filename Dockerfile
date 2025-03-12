@@ -21,20 +21,21 @@ RUN apt-get update && apt-get install -y \
     --no-install-recommends && \
     rm -rf /var/lib/apt/lists/*
 
-# Set the working directory inside the container
+# Set environment variables for Puppeteer
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+ENV CHROMIUM_PATH=/usr/bin/chromium  
+# Use chromium instead of chromium-browser
+
+# Set working directory
 WORKDIR /usr/src/app
 
 # Copy package.json and package-lock.json
 COPY package*.json ./
 
-# Install dependencies, including Puppeteer
+# Install dependencies
 RUN npm install --production && npm cache clean --force
 
-# Add environment variable for Puppeteer to locate Chromium
-ENV PUPPETEER_SKIP_DOWNLOAD=true
-ENV CHROMIUM_PATH=/usr/bin/chromium
-
-# Copy the rest of the application code
+# Copy the rest of the application
 COPY . .
 
 # Expose the port your app runs on
