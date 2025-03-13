@@ -210,7 +210,7 @@ const client = new Client({
             '--single-process',          // Prevent multiple processes
             '--no-zygote'                // Helps with containerized environments
         ],
-        executablePath: process.env.BROWSER_PATH || '/usr/bin/chromium-browser'
+        executablePath: BROWSER_PATH
     }
 });
 // Generate and display QR code
