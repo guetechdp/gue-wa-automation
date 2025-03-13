@@ -183,6 +183,7 @@ async function getPreviousMessages(messages, timestamp) {
 }
 
 // Updated Puppeteer Configuration
+/*
 const client = new Client({
     authStrategy: new LocalAuth({
         dataPath: SESSION_PATH  // Force storage in /app
@@ -193,7 +194,25 @@ const client = new Client({
         executablePath: BROWSER_PATH  // Make sure the correct path is used
     }
 });
+*/
 
+const client = new Client({
+    authStrategy: new LocalAuth({
+        dataPath: SESSION_PATH  // Store session in Railway's persistent storage
+    }),
+    puppeteer: {
+        headless: true,
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',   // Prevent crashes due to memory limits
+            '--disable-gpu',             // Avoid GPU-related issues
+            '--single-process',          // Prevent multiple processes
+            '--no-zygote'                // Helps with containerized environments
+        ],
+        executablePath: process.env.BROWSER_PATH || '/usr/bin/chromium-browser'
+    }
+});
 // Generate and display QR code
 client.on('qr', (qr) => {
     // Generate and print the QR code in the terminal
@@ -292,12 +311,6 @@ client.on('message', async message => {
             console.log(`Message from ${senderNumber} ignored.`);
         }
     }
-});
-
-// Handle Disconnections and Reconnections
-client.on('disconnected', (reason) => {
-    console.log('Client disconnected:', reason);
-    client.initialize();
 });
 
 // Periodic check for client status and reinitialization if needed
