@@ -37,7 +37,7 @@ db.loadDatabase({}, () => {
 messagewaitingtime = Number(process.env.M_WAITING_TIME)
 
 // Ensure Puppeteer Path is Correct
-const BROWSER_PATH = process.env.CHROMIUM_PATH || '/usr/bin/chromium-browser';
+const BROWSER_PATH = process.env.CHROMIUM_PATH || '/usr/bin/chromium';
 
 const config = {
     input: {},
