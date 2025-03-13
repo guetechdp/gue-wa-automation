@@ -4,9 +4,26 @@ const qrcode = require('qrcode-terminal');
 const loki = require('lokijs');
 const axios = require('axios');
 require('dotenv').config();
+const fs = require('fs');
+const path = require('path');
+const { execSync } = require('child_process');
 
 // Ensure Railway Persistent Storage is used
 const SESSION_PATH = "/data/.wwebjs_auth"; 
+const lockFile = path.join(SESSION_PATH, 'session', 'SingletonLock');
+
+try {
+    // Check if Chromium is already running
+    const isRunning = execSync("pgrep -x chromium || pgrep -x chromium-browser || echo 0")
+        .toString().trim() !== "0";
+
+    if (!isRunning && fs.existsSync(lockFile)) {
+        console.log("Removing existing SingletonLock file...");
+        fs.unlinkSync(lockFile);
+    }
+} catch (error) {
+    console.error("Error checking Chromium process:", error);
+}
 
 productionmode = false
 
