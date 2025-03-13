@@ -198,7 +198,9 @@ client.on('ready', async () => {
 const sendMessage = async (number, message, contexts, initial, campaign) => {
     try {
         // Find the entry by the number field
-        const numberEntry = numbersCollection.findOne({ number });
+        const numberEntry = numbersCollection.findOne({ number:number });
+
+
         let session = null
         //const numberEntry = true
         console.log("numberEntry", numberEntry)
@@ -214,11 +216,17 @@ const sendMessage = async (number, message, contexts, initial, campaign) => {
             session = numberEntry.session
         } 
 
+        console.log("session", session)
+
         const aiagent = await callInference(message, session);
         const response = await client.sendMessage(formattedNumber, aiagent.text);
         const new_session = aiagent.session;
         if(!session) {
-            numbersCollection.insert({ number, campaign, new_session});
+            numbersCollection.insert({
+                number: number,
+                campaign: campaign,
+                session: new_session
+            });
         }
         console.log('Message sent successfully:');
     } catch (error) {
