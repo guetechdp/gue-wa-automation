@@ -279,6 +279,7 @@ client.on('change_state', (state) => {
 
 // Event listener for incoming messages
 client.on('message', async message => {
+    console.log("message triggered")
     // Check if the sender's number is in the allowed numbers list
     const senderNumber = message.from.split('@')[0]; // Get the number without the domain
     if(productionmode){
