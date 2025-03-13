@@ -244,14 +244,6 @@ client.on('auth_failure', () => {
     console.error('Authentication failed, retrying...');
 });
 
-// Example usage
-client.on('ready', () => {
-    // Send a message when the client is ready
-    const number = '6282299819518'; // Replace with the target number
-    const message = 'Hello!';
-    //sendMessage(number, message, true);
-});
-
 // Handle connection issues and auto-reconnect
 client.on('disconnected', (reason) => {
     console.log('Client disconnected, attempting to reconnect...', reason);
