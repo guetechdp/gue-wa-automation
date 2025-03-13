@@ -6,7 +6,7 @@ const axios = require('axios');
 require('dotenv').config();
 
 // Ensure Railway Persistent Storage is used
-const SESSION_PATH = "/app/.wwebjs_auth"; 
+const SESSION_PATH = "/data/.wwebjs_auth"; 
 
 productionmode = false
 
