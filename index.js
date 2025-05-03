@@ -62,6 +62,11 @@ const config = {
     debug: {}
 }
 
+const configfw = {
+    question: "",
+    overrideConfig: {}
+}
+
 allowedNumbers = []; // Replace with actual numbers
 // Split the string by '.' to get the path
 try{
@@ -74,7 +79,7 @@ try{
 let myWhatsAppNumber = null;
 const ALIWF_SCOPE_API_KEY = process.env.ALIWF_SCOPE_API_KEY; // Ensure this is set in your environment
 const ALIWF_APP_ID = process.env.ALIWF_APP_ID; // Replace with your actual App ID
-async function callInference(messages, session) {
+async function callInferenceAli(messages, session) {
     try {
         const url = `https://dashscope-intl.aliyuncs.com/api/v1/apps/${ALIWF_APP_ID}/completion`;
         
@@ -94,6 +99,37 @@ async function callInference(messages, session) {
         jsonData = {
             text : rsp.output.text,
             session: rsp.output.session_id
+        }
+        return jsonData;
+    } catch (error) {
+      console.error('Error during inference:', error);
+      return {
+        text : 'Mohon maaf, saat ini saya belum bisa menjawab pertanyaanmu',
+        session: null
+      }
+    }
+}
+
+async function callInferenceFw(messages, session) {
+    try {
+        const url = process.env.FW_ENDPOINT;
+        
+        let newConfig = configfw;
+        newConfig['question'] = messages;
+        if(session){
+            newConfig['overrideConfig']['sessionId'] = session;
+        }
+        const response = await axios.post(url, newConfig, {
+            headers: {
+                //'Authorization': `Bearer ${ALIWF_SCOPE_API_KEY}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        const rsp = response.data;
+        let jsonData = null;
+        jsonData = {
+            text : rsp.text,
+            session: rsp.sessionId
         }
         return jsonData;
     } catch (error) {
@@ -252,9 +288,14 @@ const sendMessage = async (number, message, contexts, initial, campaign) => {
             session = numberEntry.session
         } 
 
-        console.log("session", session)
-
-        const aiagent = await callInference(message, session);
+        let aiagent;
+        if (process.env.AI_AGENT === "ALI") {
+            aiagent = await callInferenceAli(message, session);
+        } else if (process.env.AI_AGENT === "FW") {
+            aiagent = await callInferenceFw(message, session);
+        } else {
+            aiagent = await callInferenceFw(message, session); // default
+        }
         const response = await client.sendMessage(formattedNumber, aiagent.text);
         const new_session = aiagent.session;
         if(!session) {
