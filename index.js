@@ -8,6 +8,10 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
+// Message queue to handle deduplication and batching
+const messageQueue = new Map(); // Map to store pending messages per user
+const processingUsers = new Map(); // Map to track users currently being processed with timestamps
+
 // Ensure Railway Persistent Storage is used
 const SESSION_PATH = "/data/.wwebjs_auth"; 
 const lockFile = path.join(SESSION_PATH, 'session', 'SingletonLock');
@@ -153,6 +157,78 @@ async function fetchMessagesAfterTimestamp(messages, timestamp) {
         console.log('No new messages after my latest message.');
         return null
     }
+}
+
+// Improved function to handle message queuing and deduplication
+async function handleIncomingMessage(sender, message, delay = 30000) {
+    const senderNumber = sender;
+    
+    // If user is already being processed, add message to queue
+    if (processingUsers.has(senderNumber)) {
+        if (!messageQueue.has(senderNumber)) {
+            messageQueue.set(senderNumber, []);
+        }
+        messageQueue.get(senderNumber).push(message);
+        console.log(`Message from ${senderNumber} queued. Total queued: ${messageQueue.get(senderNumber).length}`);
+        return;
+    }
+    
+    // Mark user as being processed with timestamp
+    processingUsers.set(senderNumber, Date.now());
+    
+    // Wait for the specified delay
+    setTimeout(async () => {
+        try {
+            // Get all queued messages for this user
+            const queuedMessages = messageQueue.get(senderNumber) || [];
+            queuedMessages.push(message); // Include the original message
+            
+            if (queuedMessages.length > 0) {
+                // Get the chat and fetch recent messages
+                const chat = await message.getChat();
+                const recentMessages = await chat.fetchMessages({ limit: 20 });
+                
+                // Find the latest message from the bot
+                const myMessages = recentMessages.filter(msg => msg.from === myWhatsAppNumber);
+                let latestBotMessage = null;
+                
+                if (myMessages.length > 0) {
+                    latestBotMessage = myMessages[myMessages.length - 1];
+                }
+                
+                // Combine all user messages since the last bot response
+                let combinedUserMessages = '';
+                if (latestBotMessage) {
+                    // Get messages after the last bot message
+                    const userMessagesAfterBot = recentMessages.filter(msg => 
+                        msg.timestamp > latestBotMessage.timestamp && 
+                        !msg.fromMe && 
+                        msg.from === message.from
+                    );
+                    combinedUserMessages = userMessagesAfterBot.map(msg => msg.body).join('\n');
+                } else {
+                    // If no previous bot message, combine all recent user messages
+                    const userMessages = recentMessages.filter(msg => 
+                        !msg.fromMe && 
+                        msg.from === message.from
+                    );
+                    combinedUserMessages = userMessages.map(msg => msg.body).join('\n');
+                }
+                
+                // If we have user messages to process
+                if (combinedUserMessages.trim()) {
+                    console.log(`Processing ${queuedMessages.length} messages from ${senderNumber}`);
+                    await sendMessage(senderNumber, combinedUserMessages, null, false, null);
+                }
+            }
+        } catch (error) {
+            console.error(`Error processing messages for ${senderNumber}:`, error);
+        } finally {
+            // Clean up
+            messageQueue.delete(senderNumber);
+            processingUsers.delete(senderNumber);
+        }
+    }, delay);
 }
 
 // Function to fetch the last 10 messages after the latest reply and reply after a delay
@@ -343,10 +419,10 @@ client.on('message', async message => {
     // Check if the sender's number is in the allowed numbers list
     const senderNumber = message.from.split('@')[0]; // Get the number without the domain
     if(productionmode){
-        await replyToNewMessages(senderNumber, message, messagewaitingtime);  // 10-second delay
+        await handleIncomingMessage(senderNumber, message, messagewaitingtime);  // 10-second delay
     } else {
         if (allowedNumbers.includes(senderNumber)) {
-            await replyToNewMessages(senderNumber, message, messagewaitingtime);  // 15-second delay
+            await handleIncomingMessage(senderNumber, message, messagewaitingtime);  // 15-second delay
             // Reply to new messages with a delay
         } else {
             console.log(`Message from ${senderNumber} ignored.`);
@@ -385,4 +461,38 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
+
+// Graceful shutdown handling
+process.on('SIGINT', () => {
+    console.log('Received SIGINT, cleaning up...');
+    messageQueue.clear();
+    processingUsers.clear();
+    process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+    console.log('Received SIGTERM, cleaning up...');
+    messageQueue.clear();
+    processingUsers.clear();
+    process.exit(0);
+});
+
+// Cleanup function to prevent memory leaks
+function cleanup() {
+    messageQueue.clear();
+    processingUsers.clear();
+}
+
+// Periodic cleanup to prevent memory leaks
+setInterval(() => {
+    const now = Date.now();
+    // Clean up any stale processing states (older than 5 minutes)
+    for (const [user, timestamp] of processingUsers.entries()) {
+        if (now - timestamp > 300000) { // 5 minutes
+            processingUsers.delete(user);
+            messageQueue.delete(user);
+            console.log(`Cleaned up stale processing state for ${user}`);
+        }
+    }
+}, 60000); // Check every minute
 

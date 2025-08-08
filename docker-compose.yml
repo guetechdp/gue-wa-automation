@@ -1,16 +1,41 @@
+version: '3.8'
+
 services:
-  app:
-    build: .
-    image: entrlab-wa  # Explicit image name, can be changed
+  whatsapp-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: whatsapp-bot
+    restart: unless-stopped
     ports:
-      - "3000:3000"  # Expose port 3000 from container to host
-    volumes:
-      - ./data/wwebjs_auth:/data/wwebjs_auth  # Use /data for persistent storage
-      - ./data/wwebjs_cache:/data/wwebjs_cache  # Use /data for persistent storage
-    env_file:
-      - .env  # Load environment variables from a .env file
+      - "3003:3003"
     environment:
-      NODE_ENV: production  # Set additional environment variables
-      CHROMIUM_PATH: /usr/bin/chromium  # Set Chromium path
-    command: "node index.js"  # Command to run when the container starts
-    restart: unless-stopped  # Automatically restart the container unless stopped manually
+      - NODE_ENV=production
+      - PORT=3003
+      - M_WAITING_TIME=30000
+      - CHROMIUM_PATH=/usr/bin/chromium-browser
+      - AI_AGENT=FW
+      - FW_ENDPOINT=http://localhost:3000/api/agents/herbakofAssistanceAgent/generate
+      - JWT_SECRET=your-jwt-secret-key-here
+      # Add your environment variables here
+      # - WHITELISTED_NUMBERS=1234567890,9876543210
+    volumes:
+      - whatsapp_data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3003/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
+
+volumes:
+  whatsapp_data:
+    driver: local
