@@ -47,7 +47,8 @@ RUN apk add --no-cache \
     harfbuzz \
     ca-certificates \
     ttf-freefont \
-    dumb-init
+    dumb-init \
+    su-exec
 
 # Create app user for security
 RUN addgroup -g 1001 -S nodejs && \
@@ -73,17 +74,18 @@ COPY --from=builder /usr/src/app/dist ./dist
 # Copy environment file if exists
 COPY .env* ./
 
+# Copy startup script
+COPY scripts/start.sh /usr/src/app/start.sh
+RUN chmod +x /usr/src/app/start.sh
+
 # Create data directory for WhatsApp session with proper permissions
 RUN mkdir -p /data && \
-    mkdir -p /tmp/.wwebjs_auth && \
     chown -R whatsapp-bot:nodejs /data && \
     chown -R whatsapp-bot:nodejs /usr/src/app && \
-    chown -R whatsapp-bot:nodejs /tmp && \
-    chmod -R 777 /data && \
-    chmod -R 777 /tmp
+    chmod -R 777 /data
 
-# Switch to non-root user
-USER whatsapp-bot
+# Note: We'll switch to non-root user only if RAILWAY_RUN_UID is not set to 0
+# This allows Railway volumes to work properly with root permissions
 
 # Expose the correct port (3003 as per your .env)
 EXPOSE 3003
@@ -92,8 +94,5 @@ EXPOSE 3003
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD node -e "require('http').get('http://localhost:3003/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })" || exit 1
 
-# Use dumb-init to handle signals properly
-ENTRYPOINT ["dumb-init", "--"]
-
-# Define the command to run the app
-CMD ["node", "dist/index.js"]
+# Use the startup script to handle user switching
+CMD ["/usr/src/app/start.sh"]

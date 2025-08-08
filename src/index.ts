@@ -39,7 +39,7 @@ const processingUsers: ProcessingState = {};
 let currentQRCode: string | null = null;
 
 // Ensure Railway Persistent Storage is used
-const SESSION_PATH = process.env.NODE_ENV === 'production' ? "/tmp/.wwebjs_auth" : "./.wwebjs_auth";
+const SESSION_PATH = process.env.NODE_ENV === 'production' ? "/data/.wwebjs_auth" : "./.wwebjs_auth";
 const RAILWAY_VOLUME_PATH = process.env.RAILWAY_VOLUME_PATH || "/data"; 
 const lockFile = path.join(SESSION_PATH, 'session', 'SingletonLock');
 
@@ -48,21 +48,10 @@ const ensureSessionDirectory = () => {
     try {
         // For Railway, we need to handle permissions more carefully
         if (process.env.NODE_ENV === 'production') {
-            console.log(`💾 Railway production mode - using temporary session storage at: ${SESSION_PATH}`);
-            console.log(`📝 Note: Sessions will be recreated on restart (Railway limitation)`);
+            console.log(`💾 Railway production mode - using persistent volume at: ${SESSION_PATH}`);
+            console.log(`📝 Sessions will be preserved across restarts!`);
             
-            // Use /tmp directory which has proper permissions
-            try {
-                if (!fs.existsSync(SESSION_PATH)) {
-                    fs.mkdirSync(SESSION_PATH, { recursive: true, mode: 0o755 });
-                    console.log(`📁 Created session directory: ${SESSION_PATH}`);
-                }
-            } catch (error) {
-                console.log(`⚠️ Could not create session directory: ${error}`);
-                console.log(`📝 Will let WhatsApp Web.js handle directory creation`);
-            }
-            
-            // Don't try to create subdirectories - let WhatsApp Web.js handle it
+            // Let WhatsApp Web.js handle directory creation to avoid permission issues
             console.log(`🔒 Session will be managed by WhatsApp Web.js`);
             
         } else {
@@ -409,7 +398,7 @@ if (BROWSER_PATH) {
 const client: Client = new Client({
     authStrategy: new LocalAuth({
         dataPath: SESSION_PATH,  // Store session in persistent storage
-        clientId: process.env.NODE_ENV === 'production' ? 'whatsapp-bot-railway-tmp' : 'whatsapp-bot-dev' // Unique client ID for session management
+        clientId: process.env.NODE_ENV === 'production' ? 'whatsapp-bot-railway' : 'whatsapp-bot-dev' // Unique client ID for session management
     }),
     puppeteer: {
         headless: true,
@@ -596,26 +585,47 @@ const sendMessage = async (
                 return;
             }
             
-            // Single attempt to send message (no retries to avoid duplicates)
-            let messageSent = false;
-            try {
-                const response = await client.sendMessage(formattedNumber, aiagent.text);
-                messageSent = true;
-                console.log('✅ Message sent successfully:', aiagent.text);
-            } catch (sendError: any) {
-                // This is a known WhatsApp Web.js library issue - messages are actually sent successfully
-                const errorMessage = sendError?.message || 'Unknown error';
-                if (errorMessage.includes('serialize')) {
-                    console.log('✅ Message likely sent successfully (WhatsApp Web.js internal error)');
-                } else {
-                    console.log('⚠️  WhatsApp Web.js error:', errorMessage);
-                }
-                // Don't retry to avoid duplicate messages
-            }
+            // Chunk the AI response by paragraphs and send each as a separate message
+            const paragraphs = (aiagent.text || '').split('\n\n').filter(paragraph => paragraph.trim() !== '');
             
-            // If we couldn't confirm the message was sent, log it but don't worry
-            if (!messageSent) {
-                console.log('ℹ️  Message delivery status unclear (common with WhatsApp Web.js)');
+            console.log(`📝 Sending ${paragraphs.length} paragraph(s) to ${formattedNumber}`);
+            
+            for (let i = 0; i < paragraphs.length; i++) {
+                const paragraph = paragraphs[i]?.trim();
+                if (!paragraph) continue;
+                
+                console.log(`📤 Sending paragraph ${i + 1}/${paragraphs.length}: "${paragraph}"`);
+                
+                // Single attempt to send message (no retries to avoid duplicates)
+                let messageSent = false;
+                try {
+                    if (client) {
+                        const response = await client.sendMessage(formattedNumber, paragraph);
+                        messageSent = true;
+                        console.log(`✅ Paragraph ${i + 1} sent successfully`);
+                    } else {
+                        console.error('❌ WhatsApp client not available');
+                    }
+                } catch (sendError: any) {
+                    // This is a known WhatsApp Web.js library issue - messages are actually sent successfully
+                    const errorMessage = sendError?.message || 'Unknown error';
+                    if (errorMessage.includes('serialize')) {
+                        console.log(`✅ Paragraph ${i + 1} likely sent successfully (WhatsApp Web.js internal error)`);
+                    } else {
+                        console.log(`⚠️  WhatsApp Web.js error for paragraph ${i + 1}:`, errorMessage);
+                    }
+                    // Don't retry to avoid duplicate messages
+                }
+                
+                // If we couldn't confirm the message was sent, log it but don't worry
+                if (!messageSent) {
+                    console.log(`ℹ️  Paragraph ${i + 1} delivery status unclear (common with WhatsApp Web.js)`);
+                }
+                
+                // Add a small delay between messages to avoid rate limiting
+                if (i < paragraphs.length - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
+                }
             }
             
             const new_session = aiagent.session;

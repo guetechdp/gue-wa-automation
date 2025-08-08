@@ -17,6 +17,7 @@ services:
       - AI_AGENT=FW
       - FW_ENDPOINT=http://localhost:3000/api/agents/herbakofAssistanceAgent/generate
       - JWT_SECRET=your-jwt-secret-key-here
+      - RAILWAY_RUN_UID=0
       # Add your environment variables here
       # - WHITELISTED_NUMBERS=1234567890,9876543210
     volumes:
