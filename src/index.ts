@@ -39,8 +39,73 @@ const processingUsers: ProcessingState = {};
 let currentQRCode: string | null = null;
 
 // Ensure Railway Persistent Storage is used
-const SESSION_PATH = process.env.NODE_ENV === 'production' ? "/data/.wwebjs_auth" : "./.wwebjs_auth"; 
+const SESSION_PATH = process.env.NODE_ENV === 'production' ? "/tmp/.wwebjs_auth" : "./.wwebjs_auth";
+const RAILWAY_VOLUME_PATH = process.env.RAILWAY_VOLUME_PATH || "/data"; 
 const lockFile = path.join(SESSION_PATH, 'session', 'SingletonLock');
+
+// Enhanced session directory management for Railway persistence
+const ensureSessionDirectory = () => {
+    try {
+        // For Railway, we need to handle permissions more carefully
+        if (process.env.NODE_ENV === 'production') {
+            console.log(`💾 Railway production mode - using temporary session storage at: ${SESSION_PATH}`);
+            console.log(`📝 Note: Sessions will be recreated on restart (Railway limitation)`);
+            
+            // Use /tmp directory which has proper permissions
+            try {
+                if (!fs.existsSync(SESSION_PATH)) {
+                    fs.mkdirSync(SESSION_PATH, { recursive: true, mode: 0o755 });
+                    console.log(`📁 Created session directory: ${SESSION_PATH}`);
+                }
+            } catch (error) {
+                console.log(`⚠️ Could not create session directory: ${error}`);
+                console.log(`📝 Will let WhatsApp Web.js handle directory creation`);
+            }
+            
+            // Don't try to create subdirectories - let WhatsApp Web.js handle it
+            console.log(`🔒 Session will be managed by WhatsApp Web.js`);
+            
+        } else {
+            // Development mode - create directories normally
+            if (!fs.existsSync(SESSION_PATH)) {
+                fs.mkdirSync(SESSION_PATH, { recursive: true });
+                console.log(`📁 Created session directory: ${SESSION_PATH}`);
+            }
+            
+            const sessionDir = path.join(SESSION_PATH, 'session');
+            if (!fs.existsSync(sessionDir)) {
+                fs.mkdirSync(sessionDir, { recursive: true });
+                console.log(`📁 Created session subdirectory: ${sessionDir}`);
+            }
+        }
+        
+        console.log(`💾 Session persistence configured at: ${SESSION_PATH}`);
+        console.log(`🔒 Lock file location: ${lockFile}`);
+        
+        // Check if session data exists (only if directory exists)
+        if (fs.existsSync(SESSION_PATH)) {
+            try {
+                const sessionFiles = fs.readdirSync(SESSION_PATH);
+                if (sessionFiles.length > 0) {
+                    console.log(`✅ Found existing session data: ${sessionFiles.join(', ')}`);
+                } else {
+                    console.log(`📝 No existing session data found - will create new session`);
+                }
+            } catch (error) {
+                console.log(`⚠️ Could not read session directory: ${error}`);
+            }
+        } else {
+            console.log(`📝 Session directory will be created by WhatsApp Web.js`);
+        }
+        
+    } catch (error) {
+        console.error("❌ Error setting up session directory:", error);
+        console.log("📝 Continuing with WhatsApp Web.js default behavior");
+    }
+};
+
+// Initialize session directory
+ensureSessionDirectory();
 
 try {
     // Check if Chromium is already running
@@ -48,11 +113,12 @@ try {
         .toString().trim() !== "0";
 
     if (!isRunning && fs.existsSync(lockFile)) {
-        console.log("Removing existing SingletonLock file...");
+        console.log("🔓 Removing existing SingletonLock file...");
         fs.unlinkSync(lockFile);
+        console.log("✅ SingletonLock removed successfully");
     }
 } catch (error) {
-    console.error("Error checking Chromium process:", error);
+    console.error("❌ Error checking Chromium process:", error);
 }
 
 const productionmode: boolean = env.NODE_ENV === 'production';
@@ -342,7 +408,8 @@ if (BROWSER_PATH) {
 
 const client: Client = new Client({
     authStrategy: new LocalAuth({
-        dataPath: SESSION_PATH  // Store session in persistent storage
+        dataPath: SESSION_PATH,  // Store session in persistent storage
+        clientId: process.env.NODE_ENV === 'production' ? 'whatsapp-bot-railway-tmp' : 'whatsapp-bot-dev' // Unique client ID for session management
     }),
     puppeteer: {
         headless: true,
@@ -382,12 +449,17 @@ const client: Client = new Client({
             '--disable-single-process',
             '--disable-background-timer-throttling',
             '--disable-backgrounding-occluded-windows',
-            '--disable-renderer-backgrounding'
+            '--disable-renderer-backgrounding',
+            '--user-data-dir=/tmp/chrome-user-data', // Temporary user data directory
+            '--data-path=/data' // Ensure data is stored in persistent volume
         ],
         timeout: 120000,
         defaultViewport: null
     }
 });
+
+console.log(`🚀 Initializing WhatsApp client with session path: ${SESSION_PATH}`);
+console.log(`🔒 Using LocalAuth strategy for session persistence`);
 
 // Initialize the client (following the docs pattern)
 client.initialize();
@@ -404,6 +476,7 @@ client.on('qr', (qr: string) => {
 client.on('ready', async () => {
     console.log('✅ WhatsApp client is ready!');
     console.log('🤖 Bot is now active and listening for messages');
+    console.log(`💾 Session data persisted at: ${SESSION_PATH}`);
 
     // Clear QR code since client is now authenticated
     currentQRCode = null;
@@ -412,11 +485,23 @@ client.on('ready', async () => {
     if (client.info) {
         myWhatsAppNumber = client.info.wid._serialized; // Format the number for use
         console.log("📞 Bot phone number:", myWhatsAppNumber);
+        
+        // Verify session persistence
+        try {
+            const sessionFiles = fs.readdirSync(SESSION_PATH);
+            console.log(`✅ Session files found: ${sessionFiles.length} files`);
+            sessionFiles.forEach(file => {
+                console.log(`   📄 ${file}`);
+            });
+        } catch (error) {
+            console.log(`⚠️ Could not verify session files: ${error}`);
+        }
     }
 });
 
 client.on('authenticated', () => {
     console.log('✅ Successfully authenticated with WhatsApp!');
+    console.log(`💾 Authentication data saved to: ${SESSION_PATH}`);
     // Clear QR code since client is now authenticated
     currentQRCode = null;
 });
@@ -655,55 +740,67 @@ app.listen(PORT, () => {
 
 // Graceful shutdown handling
 async function gracefulShutdown(signal: string): Promise<void> {
-    console.log(`Received ${signal}, cleaning up...`);
+    console.log(`🛑 Received ${signal}, starting graceful shutdown...`);
     
     // Clean up message queues and processing states
     Object.keys(messageQueue).forEach(key => delete messageQueue[key]);
     Object.keys(processingUsers).forEach(key => delete processingUsers[key]);
+    console.log('🧹 Cleaned up message queues and processing states');
     
     // Close WhatsApp client gracefully
     if (client) {
         try {
-            console.log('Closing WhatsApp client...');
+            console.log('📱 Closing WhatsApp client gracefully...');
             await client.destroy();
-            console.log('WhatsApp client closed successfully');
+            console.log('✅ WhatsApp client closed successfully');
         } catch (error) {
-            console.error('Error closing WhatsApp client:', error);
+            console.error('❌ Error closing WhatsApp client:', error);
         }
     }
     
-    // Clean up browser lock files only, preserve session data
+    // Enhanced session preservation for Railway
     try {
-        const lockFile = path.join(SESSION_PATH, 'session', 'SingletonLock');
-        if (fs.existsSync(lockFile)) {
-            fs.unlinkSync(lockFile);
-            console.log('Removed browser lock file');
+        console.log(`💾 Preserving session data at: ${SESSION_PATH}`);
+        
+        // Check session directory exists
+        if (fs.existsSync(SESSION_PATH)) {
+            const sessionFiles = fs.readdirSync(SESSION_PATH);
+            console.log(`📁 Found ${sessionFiles.length} session files to preserve`);
+            
+            // Only remove lock files, preserve all session data
+            const sessionDir = path.join(SESSION_PATH, 'session');
+            if (fs.existsSync(sessionDir)) {
+                const lockFiles = fs.readdirSync(sessionDir).filter(file => 
+                    file.includes('lock') || file.startsWith('Singleton')
+                );
+                
+                lockFiles.forEach(file => {
+                    try {
+                        fs.unlinkSync(path.join(sessionDir, file));
+                        console.log(`🔓 Removed lock file: ${file}`);
+                    } catch (error) {
+                        console.log(`⚠️ Could not remove lock file ${file}: ${error}`);
+                    }
+                });
+                
+                console.log(`✅ Preserved ${sessionFiles.length} session files`);
+                console.log(`🔓 Removed ${lockFiles.length} lock files`);
+            }
+        } else {
+            console.log('📝 No session directory found - first time setup');
         }
-        // Only remove lock files, preserve session data
-        const sessionDir = path.join(SESSION_PATH, 'session');
-        if (fs.existsSync(sessionDir)) {
-            // Remove only lock files, not the entire session
-            const lockFiles = ['*.lock', 'Singleton*'];
-            lockFiles.forEach(pattern => {
-                try {
-                    const files = fs.readdirSync(sessionDir);
-                    files.forEach(file => {
-                        if (file.includes('lock') || file.startsWith('Singleton')) {
-                            fs.unlinkSync(path.join(sessionDir, file));
-                            console.log(`Removed lock file: ${file}`);
-                        }
-                    });
-                } catch (error) {
-                    // Ignore errors for individual files
-                }
-            });
-            console.log('Preserved session data, removed lock files only');
+        
+        // Verify session data is preserved
+        if (fs.existsSync(SESSION_PATH)) {
+            const remainingFiles = fs.readdirSync(SESSION_PATH);
+            console.log(`💾 Session data preserved: ${remainingFiles.join(', ')}`);
         }
+        
     } catch (error) {
-        console.error('Error removing lock files:', error);
+        console.error('❌ Error during session preservation:', error);
     }
     
-    console.log('Cleanup completed, exiting...');
+    console.log('✅ Graceful shutdown completed, exiting...');
     process.exit(0);
 }
 

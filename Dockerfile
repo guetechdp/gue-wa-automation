@@ -74,9 +74,13 @@ COPY --from=builder /usr/src/app/dist ./dist
 COPY .env* ./
 
 # Create data directory for WhatsApp session with proper permissions
-RUN mkdir -p /data/.wwebjs_auth && \
+RUN mkdir -p /data && \
+    mkdir -p /tmp/.wwebjs_auth && \
     chown -R whatsapp-bot:nodejs /data && \
-    chown -R whatsapp-bot:nodejs /usr/src/app
+    chown -R whatsapp-bot:nodejs /usr/src/app && \
+    chown -R whatsapp-bot:nodejs /tmp && \
+    chmod -R 777 /data && \
+    chmod -R 777 /tmp
 
 # Switch to non-root user
 USER whatsapp-bot
