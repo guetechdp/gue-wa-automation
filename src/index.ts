@@ -1,5 +1,5 @@
 import express, { Request, Response } from 'express';
-import { Client, LocalAuth, NoAuth, Message, Chat } from 'whatsapp-web.js';
+import { Client, LocalAuth, NoAuth, Message, Chat, MessageMedia } from 'whatsapp-web.js';
 import * as qrcode from 'qrcode-terminal';
 import Loki from 'lokijs';
 import axios from 'axios';
@@ -433,70 +433,75 @@ async function getPreviousMessages(messages: Message[], timestamp: number): Prom
 function convertLLMToWhatsApp(content: string, preserveStructure: boolean = true): string {
     try {
         const originalLength = content.length;
-        let formattedContent = content;
+        let formattedContent = content.replace(/\r\n/g, '\n');
 
-        // Normalize Windows newlines
-        formattedContent = formattedContent.replace(/\r\n/g, '\n');
+        // Tokenize code regions to avoid accidental formatting inside code
+        const codeBlocks: string[] = [];
+        const inlineCodes: string[] = [];
+        formattedContent = formattedContent.replace(/```([\s\S]*?)```/g, (_m, p1) => {
+            const token = `__CODEBLOCK_${codeBlocks.length}__`;
+            codeBlocks.push(String(p1));
+            return token;
+        });
+        formattedContent = formattedContent.replace(/`([^`\n]+)`/g, (_m, p1) => {
+            const token = `__INLINECODE_${inlineCodes.length}__`;
+            inlineCodes.push(String(p1));
+            return token;
+        });
 
-        // 0. Convert Markdown links to plain clickable URLs (WhatsApp doesn't support [text](url))
+        // Markdown links → plain text with URL to ensure clickability in WhatsApp
         formattedContent = formattedContent.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '$1 ($2)');
 
-        // 1. Unescape already-escaped formatting sequences
+        // Unescape already-escaped formatting sequences
         formattedContent = formattedContent
             .replace(/\\\\_([^_]+)\\\\_/g, '_$1_')
             .replace(/\\\\\*([^*]+)\\\\\*/g, '*$1*')
             .replace(/\\\\~([^~]+)\\\\~/g, '~$1~')
             .replace(/\\\\`([^`]+)\\\\`/g, '```$1```');
 
-        // 2. Bullets → WhatsApp
+        // Bullets: •, -, * at line-start → '* '
+        // Protect the bullet marker from italic conversion by inserting a sentinel temporarily
         formattedContent = formattedContent
-            .replace(/^[\t ]*[•]\s+/gm, '* ')
-            .replace(/^[\t ]*[-*]\s+/gm, '* ');
+            .replace(/^[\t ]*[•]\s+/gm, '__BULLET__ ')
+            .replace(/^[\t ]*[-*]\s+/gm, '__BULLET__ ');
 
-        // 3. Numbered lists 1) → 1.
+        // Numbered lists: 1) → 1.
         formattedContent = formattedContent
             .replace(/^[\t ]*(\d+)\)\s+/gm, '$1. ')
             .replace(/^[\t ]*(\d+)\.\s+/gm, '$1. ');
 
-        // 4. Bold → *text*
+        // Bold: **text** or __text__ → *text*
         formattedContent = formattedContent
-            .replace(/\*\*(.*?)\*\*/g, '*$1*')
-            .replace(/__(.*?)__/g, '*$1*')
-            .replace(/<b>(.*?)<\/b>/gi, '*$1*')
-            .replace(/<strong>(.*?)<\/strong>/gi, '*$1*');
+            .replace(/\*\*(.+?)\*\*/g, '*$1*')
+            .replace(/__(.+?)__/g, '*$1*')
+            .replace(/<b>([\s\S]*?)<\/b>/gi, '*$1*')
+            .replace(/<strong>([\s\S]*?)<\/strong>/gi, '*$1*');
 
-        // 5. Italic → _text_
+        // Italic: single-asterisk or underscores → _text_
+        // - Do not convert list bullets '* ' (handled via sentinel)
+        // - Do not convert bold '**...**' (handled above)
+        // - Avoid snake_case by requiring non-word boundaries
         formattedContent = formattedContent
-            .replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '_$1_')
-            .replace(/<i>(.*?)<\/i>/gi, '_$1_')
-            .replace(/<em>(.*?)<\/em>/gi, '_$1_');
+            .replace(/(^|[^\w*])\*(?!\*)([^\s*][^*]*?[^\s*])\*(?!\*)/g, '$1_$2_')
+            .replace(/(^|[^\w])_(?!_)([^_\n]+?)_(?=[^\w]|$)/g, '$1_$2_')
+            .replace(/<i>([\s\S]*?)<\/i>/gi, '_$1_')
+            .replace(/<em>([\s\S]*?)<\/em>/gi, '_$1_');
 
-        // 6. Strikethrough → ~text~
+        // Strikethrough: ~~text~~ or <s>/<strike> → ~text~
         formattedContent = formattedContent
-            .replace(/~~(.*?)~~/g, '~$1~')
-            .replace(/<s>(.*?)<\/s>/gi, '~$1~')
-            .replace(/<strike>(.*?)<\/strike>/gi, '~$1~');
+            .replace(/~~([\s\S]*?)~~/g, '~$1~')
+            .replace(/<s>([\s\S]*?)<\/s>/gi, '~$1~')
+            .replace(/<strike>([\s\S]*?)<\/strike>/gi, '~$1~');
 
-        // 7. Code/monospace
-        // Preserve fenced blocks (multiline)
-        formattedContent = formattedContent
-            .replace(/```([\s\S]*?)```/g, '```$1```')
-            .replace(/<code>([\s\S]*?)<\/code>/gi, '`$1`')
-            .replace(/`([^`]+)`/g, '`$1`');
+        // Headers (# ...) → *...*
+        formattedContent = formattedContent.replace(/^[\t ]*#{1,6}[\t ]+(.+)$/gm, '*$1*');
 
-        // 8. Headers → bolded lines
-        formattedContent = formattedContent
-            .replace(/^[\t ]*#{1,6}[\t ]+(.+)$/gm, '*$1*');
-
-        // 9. Blockquotes → "> text"
+        // Blockquotes (> ...) and <blockquote>
         formattedContent = formattedContent
             .replace(/^[\t ]*>[\t ]+/gm, '> ')
-            .replace(/<blockquote>([\s\S]*?)<\/blockquote>/gi, (_m, p1) => {
-                const inner = String(p1).replace(/^/gm, '> ');
-                return inner;
-            });
+            .replace(/<blockquote>([\s\S]*?)<\/blockquote>/gi, (_m, p1) => String(p1).replace(/^/gm, '> '));
 
-        // 10. Basic HTML to text
+        // Basic HTML → text
         formattedContent = formattedContent
             .replace(/<br\s*\/?>(\n)?/gi, '\n')
             .replace(/<\/(p|div)>\s*<\1>/gi, '\n\n')
@@ -504,27 +509,24 @@ function convertLLMToWhatsApp(content: string, preserveStructure: boolean = true
             .replace(/<\/?(p|div|span)>/gi, '')
             .replace(/<[^>]+>/g, '');
 
-        // 11. Whitespace cleanup (optional)
+        // Restore bullet sentinel
+        formattedContent = formattedContent.replace(/^__BULLET__ /gm, '* ');
+
         if (!preserveStructure) {
             formattedContent = formattedContent
                 .replace(/\n{3,}/g, '\n\n')
                 .replace(/[ ]{2,}/g, ' ');
         }
 
-        // 12. Final line-end balancing for common marks
-        formattedContent = formattedContent
-            .replace(/(?<!\*)\*([^*\n]*?)(?=\n|$)/g, '*$1*')
-            .replace(/(?<!_)_([^_\n]*?)(?=\n|$)/g, '_$1_')
-            .replace(/(?<!~)~([^~\n]*?)(?=\n|$)/g, '~$1~')
-            .replace(/(?<!`)`([^`\n]*?)(?=\n|$)/g, '`$1`');
+        // Restore code placeholders
+        formattedContent = formattedContent.replace(/__INLINECODE_(\d+)__/g, (_m, i) => '`' + (inlineCodes[Number(i)] ?? '') + '`');
+        formattedContent = formattedContent.replace(/__CODEBLOCK_(\d+)__/g, (_m, i) => '```' + (codeBlocks[Number(i)] ?? '') + '```');
 
-        // Length log (debug)
         console.log('✅ WhatsApp formatting completed', {
             originalLength,
             formattedLength: formattedContent.length,
             reduction: originalLength - formattedContent.length
         });
-
         return formattedContent;
     } catch (error) {
         console.log('⚠️ Error in WhatsApp formatting, sending original content', error);
@@ -729,53 +731,74 @@ const sendMessage = async (
             
             // Normalize and convert LLM markdown to WhatsApp formatting before splitting
             const normalizedText = convertLLMToWhatsApp(aiagent.text || '', true);
-            // Chunk the AI response by paragraphs and send each as a separate message
-            const paragraphs = normalizedText.split('\n\n').filter(paragraph => paragraph.trim() !== '');
-            
-            console.log(`📝 Sending ${paragraphs.length} paragraph(s) to ${formattedNumber}`);
-            
-            for (let i = 0; i < paragraphs.length; i++) {
-                const paragraph = paragraphs[i]?.trim();
-                if (!paragraph) continue;
-                
-                console.log(`📤 Sending paragraph ${i + 1}/${paragraphs.length}: "${paragraph}"`);
-                
-                // Single attempt to send message (no retries to avoid duplicates)
-                let messageSent = false;
+            // Split by double newlines as logical blocks
+            const rawBlocks = normalizedText.split('\n\n').map(b => b.trim()).filter(Boolean);
+
+            // Within each block, extract media URLs prefixed by '@' and schedule sends in-order
+            // Only treat as media if URL ends with a known media extension (images/videos/audio), optional query/hash
+            // Examples: @https://example.com/file.png, @https://cdn/x.mp4?token=abc
+            const mediaExtPattern = '(?:png|jpe?g|gif|webp|bmp|svg|mp4|mov|m4v|webm|avi|mkv|mp3|wav|ogg|m4a|aac)';
+            const urlRegex = new RegExp('@\\s*(https?:\\/\\/[^\\s)]+?\\.(?:' + mediaExtPattern + ')(?:[?#][^\\s)]*)?)', 'gi');
+
+            type OutgoingPart = { kind: 'text' | 'media'; value: string };
+            const outgoingParts: OutgoingPart[] = [];
+
+            for (const block of rawBlocks) {
+                let lastIndex = 0;
+                let match: RegExpExecArray | null;
+                while ((match = urlRegex.exec(block)) !== null) {
+                    const preText = block.slice(lastIndex, match.index).trim();
+                    if (preText) outgoingParts.push({ kind: 'text', value: preText });
+                    const url = match[1] ?? '';
+                    if (url) {
+                        outgoingParts.push({ kind: 'media', value: url });
+                    }
+                    lastIndex = match.index + match[0].length;
+                }
+                const tail = block.slice(lastIndex).trim();
+                if (tail) outgoingParts.push({ kind: 'text', value: tail });
+            }
+
+            console.log(`📝 Prepared ${outgoingParts.length} outgoing part(s) for ${formattedNumber}`);
+
+            for (let i = 0; i < outgoingParts.length; i++) {
+                const part = outgoingParts[i];
+                if (!part) continue;
                 try {
-                    if (client) {
-                        // Show typing before each paragraph send
-                        try {
-                            const chat = await client.getChatById(formattedNumber);
-                            await chat.sendStateTyping();
-                        } catch {}
-                        const response = await client.sendMessage(formattedNumber, paragraph);
-                        messageSent = true;
-                        console.log(`✅ Paragraph ${i + 1} sent successfully`);
-                    } else {
-                        console.error('❌ WhatsApp client not available');
+                    const chat = await client.getChatById(formattedNumber);
+                    await chat.sendStateTyping();
+                } catch {}
+
+                if (part.kind === 'media') {
+                    try {
+                        const mediaUrl = String(part.value);
+                        const media = await MessageMedia.fromUrl(mediaUrl);
+                        await client.sendMessage(formattedNumber, media);
+                        console.log(`🖼️ Sent media from ${mediaUrl}`);
+                    } catch (mediaErr: any) {
+                        console.log(`⚠️ Failed to send media ${String(part.value)}:`, mediaErr?.message || mediaErr);
+                        // Fallback: send URL as text if media fetch fails
+                        await client.sendMessage(formattedNumber, part.value);
                     }
-                } catch (sendError: any) {
-                    // This is a known WhatsApp Web.js library issue - messages are actually sent successfully
-                    const errorMessage = sendError?.message || 'Unknown error';
-                    if (errorMessage.includes('serialize')) {
-                        console.log(`✅ Paragraph ${i + 1} likely sent successfully (WhatsApp Web.js internal error)`);
-                    } else {
-                        console.log(`⚠️  WhatsApp Web.js error for paragraph ${i + 1}:`, errorMessage);
+                } else {
+                    // text
+                    try {
+                        await client.sendMessage(formattedNumber, part.value);
+                        console.log(`✅ Sent text part`);
+                    } catch (textErr: any) {
+                        const errorMessage = textErr?.message || 'Unknown error';
+                        if (errorMessage.includes('serialize')) {
+                            console.log('✅ Text likely sent successfully (WhatsApp Web.js internal error)');
+                        } else {
+                            console.log('⚠️ WhatsApp Web.js error for text part:', errorMessage);
+                        }
                     }
-                    // Don't retry to avoid duplicate messages
                 }
-                
-                // If we couldn't confirm the message was sent, log it but don't worry
-                if (!messageSent) {
-                    console.log(`ℹ️  Paragraph ${i + 1} delivery status unclear (common with WhatsApp Web.js)`);
-                }
-                
-                // Add a small, natural delay (1-3s) between paragraphs to avoid rate limiting and look natural
-                if (i < paragraphs.length - 1) {
-                    const delayMs = 1000 + Math.floor(Math.random() * 2000); // 1000-3000 ms
-                    console.log(`⏳ Waiting ${delayMs}ms before sending next paragraph`);
-                    // Keep typing status during wait
+
+                // Natural delay between parts
+                if (i < outgoingParts.length - 1) {
+                    const delayMs = 1000 + Math.floor(Math.random() * 2000);
+                    console.log(`⏳ Waiting ${delayMs}ms before next part`);
                     try {
                         const chat = await client.getChatById(formattedNumber);
                         await chat.sendStateTyping();
