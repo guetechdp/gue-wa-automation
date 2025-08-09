@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 # Startup script for WhatsApp Bot
 # Handles Railway volume permissions
