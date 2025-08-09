@@ -87,12 +87,12 @@ RUN mkdir -p /data && \
 # Note: We'll switch to non-root user only if RAILWAY_RUN_UID is not set to 0
 # This allows Railway volumes to work properly with root permissions
 
-# Expose the correct port (3003 as per your .env)
-EXPOSE 3003
+# Expose the app port (matches app default PORT=3000)
+EXPOSE 3000
 
-# Health check with correct port
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD node -e "require('http').get('http://localhost:3003/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })" || exit 1
+# Container-level healthcheck against the app's /health endpoint on port 3000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=5 \
+    CMD node -e "require('http').get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })" || exit 1
 
 # Use the startup script to handle user switching
 CMD ["/usr/src/app/start.sh"]
