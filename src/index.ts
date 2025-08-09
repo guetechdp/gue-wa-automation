@@ -43,7 +43,11 @@ const RAILWAY_VOLUME_PATH = process.env.RAILWAY_VOLUME_PATH || "/data";
 const SESSION_PATH = process.env.NODE_ENV === 'production'
   ? path.join(RAILWAY_VOLUME_PATH, '.wwebjs_auth')
   : './.wwebjs_auth';
-const lockFile = path.join(SESSION_PATH, 'session', 'SingletonLock');
+const clientIdProd = 'whatsapp-bot-railway';
+const clientIdDev = 'whatsapp-bot-dev';
+const resolvedClientId = process.env.NODE_ENV === 'production' ? clientIdProd : clientIdDev;
+const legacyLockFile = path.join(SESSION_PATH, 'session', 'SingletonLock');
+const clientLockFile = path.join(SESSION_PATH, `session-${resolvedClientId}`, 'SingletonLock');
 
 // Enhanced session directory management for Railway persistence
 const ensureSessionDirectory = () => {
@@ -71,7 +75,7 @@ const ensureSessionDirectory = () => {
         }
         
         console.log(`💾 Session persistence configured at: ${SESSION_PATH}`);
-        console.log(`🔒 Lock file location: ${lockFile}`);
+        console.log(`🔒 Lock file locations: ${legacyLockFile} and ${clientLockFile}`);
         
         // Check if session data exists (only if directory exists)
         if (fs.existsSync(SESSION_PATH)) {
@@ -103,10 +107,18 @@ try {
     const isRunning = execSync("pgrep -x chromium || pgrep -x chromium-browser || echo 0")
         .toString().trim() !== "0";
 
-    if (!isRunning && fs.existsSync(lockFile)) {
-        console.log("🔓 Removing existing SingletonLock file...");
-        fs.unlinkSync(lockFile);
-        console.log("✅ SingletonLock removed successfully");
+    // Remove any stale SingletonLock files (legacy and client-specific)
+    const lockFilesToCheck = [legacyLockFile, clientLockFile];
+    for (const lf of lockFilesToCheck) {
+        try {
+            if (!isRunning && fs.existsSync(lf)) {
+                console.log(`🔓 Removing existing SingletonLock file: ${lf}`);
+                fs.unlinkSync(lf);
+                console.log("✅ SingletonLock removed successfully");
+            }
+        } catch (e) {
+            console.log(`⚠️ Could not remove lock file ${lf}: ${e}`);
+        }
     }
 } catch (error) {
     console.error("❌ Error checking Chromium process:", error);
@@ -411,7 +423,7 @@ const client: Client = new Client({
     authStrategy: new LocalAuth({
         // Persist session inside Railway volume; see docs: https://wwebjs.dev/guide/creating-your-bot/authentication.html#location-path
         dataPath: SESSION_PATH,
-        clientId: process.env.NODE_ENV === 'production' ? 'whatsapp-bot-railway' : 'whatsapp-bot-dev'
+        clientId: resolvedClientId
     }),
     puppeteer: {
         headless: true,
