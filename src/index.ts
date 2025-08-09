@@ -452,8 +452,7 @@ const client: Client = new Client({
             '--disable-background-timer-throttling',
             '--disable-backgrounding-occluded-windows',
             '--disable-renderer-backgrounding',
-            '--user-data-dir=/tmp/chrome-user-data', // Temporary user data directory
-            '--data-path=/data' // Ensure data is stored in persistent volume
+            // Allow LocalAuth to manage the Chromium user data dir for session persistence
         ],
         timeout: 120000,
         defaultViewport: null
