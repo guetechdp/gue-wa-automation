@@ -134,7 +134,7 @@ db.loadDatabase({}, () => {
     }
 });
 
-const messagewaitingtime: number = Number(env.M_WAITING_TIME) || 30000;
+const messagewaitingtime: number = 10000;
 
 // Ensure Puppeteer Path is Correct
 const BROWSER_PATH: string | undefined = env.CHROMIUM_PATH || (process.platform === 'darwin' ? '/opt/homebrew/bin/chromium' : '/usr/bin/chromium');
@@ -248,7 +248,7 @@ async function fetchMessagesAfterTimestamp(messages: Message[], timestamp: numbe
 }
 
 // Improved function to handle message queuing and deduplication
-async function handleIncomingMessage(sender: string, message: Message, delay: number = 30000): Promise<void> {
+async function handleIncomingMessage(sender: string, message: Message, delay: number = 10000): Promise<void> {
     const senderNumber: string = sender;
     
     // Check if this exact message was already processed recently
@@ -275,6 +275,15 @@ async function handleIncomingMessage(sender: string, message: Message, delay: nu
     // Mark user as being processed with timestamp
     processingUsers[senderNumber] = Date.now();
     
+    // Prepare chat and show typing while waiting to respond
+    let preReplyChat: Chat | null = null;
+    try {
+        preReplyChat = await message.getChat();
+        await preReplyChat.sendStateTyping();
+    } catch (e) {
+        console.log('Could not set typing state before reply');
+    }
+
     // Wait for the specified delay
     setTimeout(async () => {
         try {
@@ -287,8 +296,8 @@ async function handleIncomingMessage(sender: string, message: Message, delay: nu
             
             if (queuedMessages.length > 0) {
                 // Get the chat and fetch recent messages
-                const chat: Chat = await message.getChat();
-                const recentMessages: Message[] = await chat.fetchMessages({ limit: 20 });
+                const chatRef: Chat = preReplyChat || await message.getChat();
+                const recentMessages: Message[] = await chatRef.fetchMessages({ limit: 20 });
                 
                 // Find the latest message from the bot
                 const myMessages = recentMessages.filter(msg => msg.from === myWhatsAppNumber);
@@ -319,6 +328,7 @@ async function handleIncomingMessage(sender: string, message: Message, delay: nu
                 
                 // If we have user messages to process
                 if (combinedUserMessages && combinedUserMessages.trim()) {
+                    try { await chatRef.sendStateTyping(); } catch {}
                     console.log(`Processing ${queuedMessages.length} messages from ${senderNumber}`);
                     console.log(`Combined messages: "${combinedUserMessages}"`);
                     await sendMessage(senderNumber, combinedUserMessages, null, false, null);
@@ -341,7 +351,7 @@ async function handleIncomingMessage(sender: string, message: Message, delay: nu
 }
 
 // Function to fetch the last 10 messages after the latest reply and reply after a delay
-async function replyToNewMessages(sender: string, message: Message, delay: number = 30000): Promise<void> {
+async function replyToNewMessages(sender: string, message: Message, delay: number = 10000): Promise<void> {
     const chatId: string = message.from;
     let rmessage: string = message.body;
     let rcontext: ChatMessage[] | null = null;
@@ -600,6 +610,11 @@ const sendMessage = async (
                 let messageSent = false;
                 try {
                     if (client) {
+                        // Show typing before each paragraph send
+                        try {
+                            const chat = await client.getChatById(formattedNumber);
+                            await chat.sendStateTyping();
+                        } catch {}
                         const response = await client.sendMessage(formattedNumber, paragraph);
                         messageSent = true;
                         console.log(`✅ Paragraph ${i + 1} sent successfully`);
@@ -622,9 +637,16 @@ const sendMessage = async (
                     console.log(`ℹ️  Paragraph ${i + 1} delivery status unclear (common with WhatsApp Web.js)`);
                 }
                 
-                // Add a small delay between messages to avoid rate limiting
+                // Add a small, natural delay (1-3s) between paragraphs to avoid rate limiting and look natural
                 if (i < paragraphs.length - 1) {
-                    await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
+                    const delayMs = 1000 + Math.floor(Math.random() * 2000); // 1000-3000 ms
+                    console.log(`⏳ Waiting ${delayMs}ms before sending next paragraph`);
+                    // Keep typing status during wait
+                    try {
+                        const chat = await client.getChatById(formattedNumber);
+                        await chat.sendStateTyping();
+                    } catch {}
+                    await new Promise(resolve => setTimeout(resolve, delayMs));
                 }
             }
             
