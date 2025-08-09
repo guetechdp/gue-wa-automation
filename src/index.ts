@@ -289,13 +289,25 @@ async function handleIncomingMessage(sender: string, message: Message, delay: nu
     // Mark user as being processed with timestamp
     processingUsers[senderNumber] = Date.now();
     
-    // Prepare chat and show typing while waiting to respond
+    // Prepare chat and schedule sendSeen + typing at a random moment within the waiting window
     let preReplyChat: Chat | null = null;
     try {
         preReplyChat = await message.getChat();
-        await preReplyChat.sendStateTyping();
+        const minPreDelay = Math.max(0, Math.floor(delay * 0.3));
+        const maxPreDelay = Math.max(minPreDelay, Math.floor(delay * 0.8));
+        const preDelayMs = minPreDelay + Math.floor(Math.random() * (maxPreDelay - minPreDelay + 1));
+        setTimeout(async () => {
+            try {
+                if (preReplyChat) {
+                    await preReplyChat.sendSeen();
+                    await preReplyChat.sendStateTyping();
+                }
+            } catch {
+                // ignore
+            }
+        }, preDelayMs);
     } catch (e) {
-        console.log('Could not set typing state before reply');
+        console.log('Could not prepare chat for pre-reply actions');
     }
 
     // Wait for the specified delay
@@ -342,7 +354,10 @@ async function handleIncomingMessage(sender: string, message: Message, delay: nu
                 
                 // If we have user messages to process
                 if (combinedUserMessages && combinedUserMessages.trim()) {
-                    try { await chatRef.sendStateTyping(); } catch {}
+                    try {
+                        await chatRef.sendSeen();
+                        await chatRef.sendStateTyping();
+                    } catch {}
                     console.log(`Processing ${queuedMessages.length} messages from ${senderNumber}`);
                     console.log(`Combined messages: "${combinedUserMessages}"`);
                     await sendMessage(senderNumber, combinedUserMessages, null, false, null);
@@ -412,6 +427,109 @@ async function getPreviousMessages(messages: Message[], timestamp: number): Prom
         }));
     }
     return conversation;
+}
+
+// Convert generic LLM Markdown/HTML to WhatsApp-friendly formatting
+function convertLLMToWhatsApp(content: string, preserveStructure: boolean = true): string {
+    try {
+        const originalLength = content.length;
+        let formattedContent = content;
+
+        // Normalize Windows newlines
+        formattedContent = formattedContent.replace(/\r\n/g, '\n');
+
+        // 0. Convert Markdown links to plain clickable URLs (WhatsApp doesn't support [text](url))
+        formattedContent = formattedContent.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '$1 ($2)');
+
+        // 1. Unescape already-escaped formatting sequences
+        formattedContent = formattedContent
+            .replace(/\\\\_([^_]+)\\\\_/g, '_$1_')
+            .replace(/\\\\\*([^*]+)\\\\\*/g, '*$1*')
+            .replace(/\\\\~([^~]+)\\\\~/g, '~$1~')
+            .replace(/\\\\`([^`]+)\\\\`/g, '```$1```');
+
+        // 2. Bullets → WhatsApp
+        formattedContent = formattedContent
+            .replace(/^[\t ]*[•]\s+/gm, '* ')
+            .replace(/^[\t ]*[-*]\s+/gm, '* ');
+
+        // 3. Numbered lists 1) → 1.
+        formattedContent = formattedContent
+            .replace(/^[\t ]*(\d+)\)\s+/gm, '$1. ')
+            .replace(/^[\t ]*(\d+)\.\s+/gm, '$1. ');
+
+        // 4. Bold → *text*
+        formattedContent = formattedContent
+            .replace(/\*\*(.*?)\*\*/g, '*$1*')
+            .replace(/__(.*?)__/g, '*$1*')
+            .replace(/<b>(.*?)<\/b>/gi, '*$1*')
+            .replace(/<strong>(.*?)<\/strong>/gi, '*$1*');
+
+        // 5. Italic → _text_
+        formattedContent = formattedContent
+            .replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '_$1_')
+            .replace(/<i>(.*?)<\/i>/gi, '_$1_')
+            .replace(/<em>(.*?)<\/em>/gi, '_$1_');
+
+        // 6. Strikethrough → ~text~
+        formattedContent = formattedContent
+            .replace(/~~(.*?)~~/g, '~$1~')
+            .replace(/<s>(.*?)<\/s>/gi, '~$1~')
+            .replace(/<strike>(.*?)<\/strike>/gi, '~$1~');
+
+        // 7. Code/monospace
+        // Preserve fenced blocks (multiline)
+        formattedContent = formattedContent
+            .replace(/```([\s\S]*?)```/g, '```$1```')
+            .replace(/<code>([\s\S]*?)<\/code>/gi, '`$1`')
+            .replace(/`([^`]+)`/g, '`$1`');
+
+        // 8. Headers → bolded lines
+        formattedContent = formattedContent
+            .replace(/^[\t ]*#{1,6}[\t ]+(.+)$/gm, '*$1*');
+
+        // 9. Blockquotes → "> text"
+        formattedContent = formattedContent
+            .replace(/^[\t ]*>[\t ]+/gm, '> ')
+            .replace(/<blockquote>([\s\S]*?)<\/blockquote>/gi, (_m, p1) => {
+                const inner = String(p1).replace(/^/gm, '> ');
+                return inner;
+            });
+
+        // 10. Basic HTML to text
+        formattedContent = formattedContent
+            .replace(/<br\s*\/?>(\n)?/gi, '\n')
+            .replace(/<\/(p|div)>\s*<\1>/gi, '\n\n')
+            .replace(/<\/(h\d)>\s*/gi, '\n\n')
+            .replace(/<\/?(p|div|span)>/gi, '')
+            .replace(/<[^>]+>/g, '');
+
+        // 11. Whitespace cleanup (optional)
+        if (!preserveStructure) {
+            formattedContent = formattedContent
+                .replace(/\n{3,}/g, '\n\n')
+                .replace(/[ ]{2,}/g, ' ');
+        }
+
+        // 12. Final line-end balancing for common marks
+        formattedContent = formattedContent
+            .replace(/(?<!\*)\*([^*\n]*?)(?=\n|$)/g, '*$1*')
+            .replace(/(?<!_)_([^_\n]*?)(?=\n|$)/g, '_$1_')
+            .replace(/(?<!~)~([^~\n]*?)(?=\n|$)/g, '~$1~')
+            .replace(/(?<!`)`([^`\n]*?)(?=\n|$)/g, '`$1`');
+
+        // Length log (debug)
+        console.log('✅ WhatsApp formatting completed', {
+            originalLength,
+            formattedLength: formattedContent.length,
+            reduction: originalLength - formattedContent.length
+        });
+
+        return formattedContent;
+    } catch (error) {
+        console.log('⚠️ Error in WhatsApp formatting, sending original content', error);
+        return content;
+    }
 }
 
 // Only set executablePath if BROWSER_PATH is defined
@@ -609,8 +727,10 @@ const sendMessage = async (
                 return;
             }
             
+            // Normalize and convert LLM markdown to WhatsApp formatting before splitting
+            const normalizedText = convertLLMToWhatsApp(aiagent.text || '', true);
             // Chunk the AI response by paragraphs and send each as a separate message
-            const paragraphs = (aiagent.text || '').split('\n\n').filter(paragraph => paragraph.trim() !== '');
+            const paragraphs = normalizedText.split('\n\n').filter(paragraph => paragraph.trim() !== '');
             
             console.log(`📝 Sending ${paragraphs.length} paragraph(s) to ${formattedNumber}`);
             
