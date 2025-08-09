@@ -39,8 +39,10 @@ const processingUsers: ProcessingState = {};
 let currentQRCode: string | null = null;
 
 // Ensure Railway Persistent Storage is used
-const SESSION_PATH = process.env.NODE_ENV === 'production' ? "/data/.wwebjs_auth" : "./.wwebjs_auth";
-const RAILWAY_VOLUME_PATH = process.env.RAILWAY_VOLUME_PATH || "/data"; 
+const RAILWAY_VOLUME_PATH = process.env.RAILWAY_VOLUME_PATH || "/data";
+const SESSION_PATH = process.env.NODE_ENV === 'production'
+  ? path.join(RAILWAY_VOLUME_PATH, '.wwebjs_auth')
+  : './.wwebjs_auth';
 const lockFile = path.join(SESSION_PATH, 'session', 'SingletonLock');
 
 // Enhanced session directory management for Railway persistence
@@ -407,8 +409,9 @@ if (BROWSER_PATH) {
 
 const client: Client = new Client({
     authStrategy: new LocalAuth({
-        dataPath: SESSION_PATH,  // Store session in persistent storage
-        clientId: process.env.NODE_ENV === 'production' ? 'whatsapp-bot-railway' : 'whatsapp-bot-dev' // Unique client ID for session management
+        // Persist session inside Railway volume; see docs: https://wwebjs.dev/guide/creating-your-bot/authentication.html#location-path
+        dataPath: SESSION_PATH,
+        clientId: process.env.NODE_ENV === 'production' ? 'whatsapp-bot-railway' : 'whatsapp-bot-dev'
     }),
     puppeteer: {
         headless: true,
