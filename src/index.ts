@@ -732,11 +732,11 @@ const sendMessage = async (
             // Extract explicit Markdown images first: ![alt](url)
             const imageMdRegex = /!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g;
             const extractedMediaList: { url: string; caption?: string | undefined }[] = [];
-                const withMediaTokens = (aiagent.text || '').replace(imageMdRegex, (_m: string, alt: string, url: string) => {
+            const withMediaTokens = (aiagent.text || '').replace(imageMdRegex, (_m: string, alt: string, url: string) => {
                 const idx = extractedMediaList.length;
                     const cap = String(alt || '').trim();
                     extractedMediaList.push({ url: String(url), caption: cap.length > 0 ? cap : undefined });
-                return `__MEDIA_${idx}__`;
+                return `[[MEDIA_${idx}]]`;
             });
 
             // Normalize and convert LLM markdown to WhatsApp formatting before splitting
@@ -760,7 +760,7 @@ const sendMessage = async (
                 // 3) bare media URLs by extension
                 const mediaExtPattern = '(?:png|jpe?g|gif|webp|bmp|svg|mp4|mov|m4v|webm|avi|mkv|mp3|wav|ogg|m4a|aac)';
                 const combined = new RegExp(
-                    `(__MEDIA_(\\d+)__)|@\\s*(https?:\\/\\/[^\\s)]+?\\.(?:${mediaExtPattern})(?:[?#][^\\s)]*)?)|(https?:\\/\\/[^\\s)]+?\\.(?:${mediaExtPattern})(?:[?#][^\\s)]*)?)`,
+                    `(__MEDIA_(\\d+)__|\\[\\[MEDIA_(\\d+)\\]\\])|@\\s*(https?:\\/\\/[^\\s)]+?\\.(?:${mediaExtPattern})(?:[?#][^\\s)]*)?)|(https?:\\/\\/[^\\s)]+?\\.(?:${mediaExtPattern})(?:[?#][^\\s)]*)?)`,
                     'gi'
                 );
                 let lastIndex = 0;
@@ -770,8 +770,8 @@ const sendMessage = async (
                     if (pre) outgoingParts.push({ kind: 'text', value: pre });
 
                     if (m[1]) {
-                        // __MEDIA_n__ token
-                        const idx = Number(m[2] ?? -1);
+                        // media token: either __MEDIA_n__ or [[MEDIA_n]]
+                        const idx = Number(m[2] ?? m[3] ?? -1);
                         const meta = extractedMediaList[idx];
                         if (meta && meta.url) {
                             outgoingParts.push({ kind: 'media', value: meta.url, caption: meta.caption });
@@ -781,7 +781,7 @@ const sendMessage = async (
                         }
                     } else {
                         // Either @media url (group 3) or bare media url (group 4)
-                        const url = (m[3] || m[4]) ?? '';
+                        const url = (m[4] || m[5]) ?? '';
                         if (url) outgoingParts.push({ kind: 'media', value: url });
                     }
 
