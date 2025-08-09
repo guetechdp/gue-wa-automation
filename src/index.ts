@@ -460,10 +460,10 @@ function convertLLMToWhatsApp(content: string, preserveStructure: boolean = true
             .replace(/\\\\`([^`]+)\\\\`/g, '```$1```');
 
         // Bullets: •, -, * at line-start → '* '
-        // Protect the bullet marker from italic conversion by inserting a sentinel temporarily
+        // Protect bullet markers using a neutral sentinel that won't collide with formatting rules
         formattedContent = formattedContent
-            .replace(/^[\t ]*[•]\s+/gm, '__BULLET__ ')
-            .replace(/^[\t ]*[-*]\s+/gm, '__BULLET__ ');
+            .replace(/^[\t ]*[•]\s+/gm, '§BULLET§ ')
+            .replace(/^[\t ]*[-*]\s+/gm, '§BULLET§ ');
 
         // Numbered lists: 1) → 1.
         formattedContent = formattedContent
@@ -509,8 +509,8 @@ function convertLLMToWhatsApp(content: string, preserveStructure: boolean = true
             .replace(/<\/?(p|div|span)>/gi, '')
             .replace(/<[^>]+>/g, '');
 
-        // Restore bullet sentinel
-        formattedContent = formattedContent.replace(/^__BULLET__ /gm, '* ');
+        // Restore bullet sentinel to WhatsApp bullet style
+        formattedContent = formattedContent.replace(/^§BULLET§ /gm, '* ');
 
         if (!preserveStructure) {
             formattedContent = formattedContent
@@ -804,16 +804,28 @@ const sendMessage = async (
                 if (part.kind === 'media') {
                     try {
                         const mediaUrl = String(part.value);
-                        const media = await MessageMedia.fromUrl(mediaUrl);
-                        if (part.caption) {
-                            await client.sendMessage(formattedNumber, media, { caption: part.caption });
-                        } else {
-                            await client.sendMessage(formattedNumber, media);
+                        const media = await MessageMedia.fromUrl(mediaUrl, { unsafeMime: true });
+                        try {
+                            if (part.caption) {
+                                await client.sendMessage(formattedNumber, media, { caption: part.caption });
+                            } else {
+                                await client.sendMessage(formattedNumber, media);
+                            }
+                            console.log(`🖼️ Sent media from ${mediaUrl}`);
+                        } catch (sendErr: any) {
+                            const errorMessage = (sendErr?.message || '').toString();
+                            if (errorMessage.includes('serialize')) {
+                                console.log('✅ Media likely sent successfully (WhatsApp Web.js internal error)');
+                                // Do not send URL fallback to avoid duplicates
+                            } else {
+                                console.log('⚠️ WhatsApp Web.js error sending media:', errorMessage);
+                                // Fallback: send URL as text only for real failures
+                                await client.sendMessage(formattedNumber, part.value);
+                            }
                         }
-                        console.log(`🖼️ Sent media from ${mediaUrl}`);
                     } catch (mediaErr: any) {
-                        console.log(`⚠️ Failed to send media ${String(part.value)}:`, mediaErr?.message || mediaErr);
-                        // Fallback: send URL as text if media fetch fails
+                        console.log(`⚠️ Failed to fetch media ${String(part.value)}:`, mediaErr?.message || mediaErr);
+                        // Fallback: send URL as text if fetching media fails
                         await client.sendMessage(formattedNumber, part.value);
                     }
                 } else {
