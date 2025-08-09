@@ -729,8 +729,18 @@ const sendMessage = async (
                 return;
             }
             
+            // Extract explicit Markdown images first: ![alt](url)
+            const imageMdRegex = /!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g;
+            const extractedMediaList: { url: string; caption?: string | undefined }[] = [];
+                const withMediaTokens = (aiagent.text || '').replace(imageMdRegex, (_m: string, alt: string, url: string) => {
+                const idx = extractedMediaList.length;
+                    const cap = String(alt || '').trim();
+                    extractedMediaList.push({ url: String(url), caption: cap.length > 0 ? cap : undefined });
+                return `__MEDIA_${idx}__`;
+            });
+
             // Normalize and convert LLM markdown to WhatsApp formatting before splitting
-            const normalizedText = convertLLMToWhatsApp(aiagent.text || '', true);
+            const normalizedText = convertLLMToWhatsApp(withMediaTokens, true);
             // Split by double newlines as logical blocks
             const rawBlocks = normalizedText.split('\n\n').map(b => b.trim()).filter(Boolean);
 
@@ -740,20 +750,42 @@ const sendMessage = async (
             const mediaExtPattern = '(?:png|jpe?g|gif|webp|bmp|svg|mp4|mov|m4v|webm|avi|mkv|mp3|wav|ogg|m4a|aac)';
             const urlRegex = new RegExp('@\\s*(https?:\\/\\/[^\\s)]+?\\.(?:' + mediaExtPattern + ')(?:[?#][^\\s)]*)?)', 'gi');
 
-            type OutgoingPart = { kind: 'text' | 'media'; value: string };
+            type OutgoingPart = { kind: 'text' | 'media'; value: string; caption?: string | undefined };
             const outgoingParts: OutgoingPart[] = [];
 
             for (const block of rawBlocks) {
+                // Build a combined scanner to extract, in order:
+                // 1) explicit markdown image tokens __MEDIA_n__
+                // 2) @explicit media URLs by extension
+                // 3) bare media URLs by extension
+                const mediaExtPattern = '(?:png|jpe?g|gif|webp|bmp|svg|mp4|mov|m4v|webm|avi|mkv|mp3|wav|ogg|m4a|aac)';
+                const combined = new RegExp(
+                    `(__MEDIA_(\\d+)__)|@\\s*(https?:\\/\\/[^\\s)]+?\\.(?:${mediaExtPattern})(?:[?#][^\\s)]*)?)|(https?:\\/\\/[^\\s)]+?\\.(?:${mediaExtPattern})(?:[?#][^\\s)]*)?)`,
+                    'gi'
+                );
                 let lastIndex = 0;
-                let match: RegExpExecArray | null;
-                while ((match = urlRegex.exec(block)) !== null) {
-                    const preText = block.slice(lastIndex, match.index).trim();
-                    if (preText) outgoingParts.push({ kind: 'text', value: preText });
-                    const url = match[1] ?? '';
-                    if (url) {
-                        outgoingParts.push({ kind: 'media', value: url });
+                let m: RegExpExecArray | null;
+                while ((m = combined.exec(block)) !== null) {
+                    const pre = block.slice(lastIndex, m.index).trim();
+                    if (pre) outgoingParts.push({ kind: 'text', value: pre });
+
+                    if (m[1]) {
+                        // __MEDIA_n__ token
+                        const idx = Number(m[2] ?? -1);
+                        const meta = extractedMediaList[idx];
+                        if (meta && meta.url) {
+                            outgoingParts.push({ kind: 'media', value: meta.url, caption: meta.caption });
+                        } else {
+                            // Fallback: keep the token textually if something went wrong
+                            outgoingParts.push({ kind: 'text', value: m[0] });
+                        }
+                    } else {
+                        // Either @media url (group 3) or bare media url (group 4)
+                        const url = (m[3] || m[4]) ?? '';
+                        if (url) outgoingParts.push({ kind: 'media', value: url });
                     }
-                    lastIndex = match.index + match[0].length;
+
+                    lastIndex = m.index + m[0].length;
                 }
                 const tail = block.slice(lastIndex).trim();
                 if (tail) outgoingParts.push({ kind: 'text', value: tail });
@@ -773,7 +805,11 @@ const sendMessage = async (
                     try {
                         const mediaUrl = String(part.value);
                         const media = await MessageMedia.fromUrl(mediaUrl);
-                        await client.sendMessage(formattedNumber, media);
+                        if (part.caption) {
+                            await client.sendMessage(formattedNumber, media, { caption: part.caption });
+                        } else {
+                            await client.sendMessage(formattedNumber, media);
+                        }
                         console.log(`🖼️ Sent media from ${mediaUrl}`);
                     } catch (mediaErr: any) {
                         console.log(`⚠️ Failed to send media ${String(part.value)}:`, mediaErr?.message || mediaErr);
