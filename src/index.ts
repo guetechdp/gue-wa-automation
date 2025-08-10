@@ -284,28 +284,6 @@ async function handleIncomingMessage(sender: string, message: Message, delay: nu
         timestamp: Date.now()
     });
     
-    // If user is already being processed, extend the delay by another 10 seconds
-    if (processingUsers[senderNumber]) {
-        console.log(`Message from ${senderNumber} queued. Total queued: ${messageQueue[senderNumber].length}`);
-        console.log(`Extending delay by ${delay}ms for ${senderNumber}`);
-        
-        // Clear the existing timer and set a new one for another 10 seconds
-        if ((processingUsers as any)[`${senderNumber}_timer`]) {
-            clearTimeout((processingUsers as any)[`${senderNumber}_timer`]);
-        }
-        
-        // Set new timer for another 10 seconds
-        const newTimer = setTimeout(async () => {
-            await processQueuedMessages();
-        }, delay);
-        
-        (processingUsers as any)[`${senderNumber}_timer`] = newTimer;
-        return;
-    }
-    
-    // Mark user as being processed with timestamp
-    processingUsers[senderNumber] = Date.now();
-    
     // Prepare chat for pre-reply actions
     let preReplyChat: Chat | null = null;
     try {
@@ -358,6 +336,28 @@ async function handleIncomingMessage(sender: string, message: Message, delay: nu
             delete (processingUsers as any)[`${senderNumber}_timer`];
         }
     };
+    
+    // If user is already being processed, extend the delay by another 10 seconds
+    if (processingUsers[senderNumber]) {
+        console.log(`Message from ${senderNumber} queued. Total queued: ${messageQueue[senderNumber].length}`);
+        console.log(`Extending delay by ${delay}ms for ${senderNumber}`);
+        
+        // Clear the existing timer and set a new one for another 10 seconds
+        if ((processingUsers as any)[`${senderNumber}_timer`]) {
+            clearTimeout((processingUsers as any)[`${senderNumber}_timer`]);
+        }
+        
+        // Set new timer for another 10 seconds
+        const newTimer = setTimeout(async () => {
+            await processQueuedMessages();
+        }, delay);
+        
+        (processingUsers as any)[`${senderNumber}_timer`] = newTimer;
+        return;
+    }
+    
+    // Mark user as being processed with timestamp
+    processingUsers[senderNumber] = Date.now();
     
     // Schedule sendSeen + typing at a random moment within the waiting window
     if (preReplyChat) {
