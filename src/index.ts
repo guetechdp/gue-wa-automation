@@ -730,7 +730,7 @@ const sendMessage = async (
             }
             
             // Extract explicit Markdown images first: ![alt](url)
-            const imageMdRegex = /!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g;
+            const imageMdRegex = /!\[([^\]]*)\]\((https?:\/\/[^\s]+)\)/g;
             const extractedMediaList: { url: string; caption?: string | undefined }[] = [];
             const withMediaTokens = (aiagent.text || '').replace(imageMdRegex, (_m: string, alt: string, url: string) => {
                 const idx = extractedMediaList.length;
@@ -748,7 +748,7 @@ const sendMessage = async (
             // Only treat as media if URL ends with a known media extension (images/videos/audio), optional query/hash
             // Examples: @https://example.com/file.png, @https://cdn/x.mp4?token=abc
             const mediaExtPattern = '(?:png|jpe?g|gif|webp|bmp|svg|mp4|mov|m4v|webm|avi|mkv|mp3|wav|ogg|m4a|aac)';
-            const urlRegex = new RegExp('@\\s*(https?:\\/\\/[^\\s)]+?\\.(?:' + mediaExtPattern + ')(?:[?#][^\\s)]*)?)', 'gi');
+            const urlRegex = new RegExp('@\\s*(https?:\\/\\/[^\\s]+?\\.(?:' + mediaExtPattern + ')(?:[?#][^\\s]*)?)', 'gi');
 
             type OutgoingPart = { kind: 'text' | 'media'; value: string; caption?: string | undefined };
             const outgoingParts: OutgoingPart[] = [];
@@ -760,7 +760,7 @@ const sendMessage = async (
                 // 3) bare media URLs by extension
                 const mediaExtPattern = '(?:png|jpe?g|gif|webp|bmp|svg|mp4|mov|m4v|webm|avi|mkv|mp3|wav|ogg|m4a|aac)';
                 const combined = new RegExp(
-                    `(__MEDIA_(\\d+)__|\\[\\[MEDIA_(\\d+)\\]\\])|@\\s*(https?:\\/\\/[^\\s)]+?\\.(?:${mediaExtPattern})(?:[?#][^\\s)]*)?)|(https?:\\/\\/[^\\s)]+?\\.(?:${mediaExtPattern})(?:[?#][^\\s)]*)?)`,
+                    `(__MEDIA_(\\d+)__|\\[\\[MEDIA_(\\d+)\\]\\])|@\\s*(https?:\\/\\/[^\\s]+?\\.(?:${mediaExtPattern})(?:[?#][^\\s]*)?)|(https?:\\/\\/[^\\s]+?\\.(?:${mediaExtPattern})(?:[?#][^\\s]*)?)`,
                     'gi'
                 );
                 let lastIndex = 0;
