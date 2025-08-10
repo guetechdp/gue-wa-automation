@@ -284,15 +284,27 @@ async function handleIncomingMessage(sender: string, message: Message, delay: nu
         timestamp: Date.now()
     });
     
-    // If user is already being processed, just extend the delay
+    // If user is already being processed, extend the delay by another 10 seconds
     if (processingUsers[senderNumber]) {
         console.log(`Message from ${senderNumber} queued. Total queued: ${messageQueue[senderNumber].length}`);
+        console.log(`Extending delay by ${delay}ms for ${senderNumber}`);
+        
+        // Clear the existing timer and set a new one for another 10 seconds
+        if ((processingUsers as any)[`${senderNumber}_timer`]) {
+            clearTimeout((processingUsers as any)[`${senderNumber}_timer`]);
+        }
+        
+        // Set new timer for another 10 seconds
+        const newTimer = setTimeout(async () => {
+            await processQueuedMessages();
+        }, delay);
+        
+        (processingUsers as any)[`${senderNumber}_timer`] = newTimer;
         return;
     }
     
-    // Mark user as being processed with timestamp and processing state
+    // Mark user as being processed with timestamp
     processingUsers[senderNumber] = Date.now();
-    (processingUsers as any)[`${senderNumber}_processing`] = true;
     
     // Prepare chat for pre-reply actions
     let preReplyChat: Chat | null = null;
@@ -302,17 +314,8 @@ async function handleIncomingMessage(sender: string, message: Message, delay: nu
         console.log('Could not prepare chat for pre-reply actions');
     }
     
-    // Single timer for processing
-    let processingTimer: NodeJS.Timeout | null = null;
-    
     // Function to process all queued messages
     const processQueuedMessages = async () => {
-        // Check if already processed
-        if (!(processingUsers as any)[`${senderNumber}_processing`]) {
-            console.log(`Processing already completed for ${senderNumber}, skipping`);
-            return;
-        }
-        
         try {
             // Get all queued messages for this user
             const queuedMessages = messageQueue[senderNumber] || [];
@@ -352,63 +355,32 @@ async function handleIncomingMessage(sender: string, message: Message, delay: nu
             // Clean up
             delete messageQueue[senderNumber];
             delete processingUsers[senderNumber];
-            delete (processingUsers as any)[`${senderNumber}_processing`];
+            delete (processingUsers as any)[`${senderNumber}_timer`];
         }
     };
     
-    // Function to schedule processing with delay
-    const scheduleProcessing = (currentDelay: number) => {
-        // Clear any existing timer
-        if (processingTimer) {
-            clearTimeout(processingTimer);
-        }
-        
-        // Schedule sendSeen + typing at a random moment within the waiting window
-        if (preReplyChat) {
-            const minPreDelay = Math.max(0, Math.floor(currentDelay * 0.3));
-            const maxPreDelay = Math.max(minPreDelay, Math.floor(currentDelay * 0.8));
-            const preDelayMs = minPreDelay + Math.floor(Math.random() * (maxPreDelay - minPreDelay + 1));
-            setTimeout(async () => {
-                try {
-                    await preReplyChat!.sendSeen();
-                    await preReplyChat!.sendStateTyping();
-                } catch {
-                    // ignore
-                }
-            }, preDelayMs);
-        }
-        
-        // Schedule the main processing
-        processingTimer = setTimeout(processQueuedMessages, currentDelay);
-    };
+    // Schedule sendSeen + typing at a random moment within the waiting window
+    if (preReplyChat) {
+        const minPreDelay = Math.max(0, Math.floor(delay * 0.3));
+        const maxPreDelay = Math.max(minPreDelay, Math.floor(delay * 0.8));
+        const preDelayMs = minPreDelay + Math.floor(Math.random() * (maxPreDelay - minPreDelay + 1));
+        setTimeout(async () => {
+            try {
+                await preReplyChat!.sendSeen();
+                await preReplyChat!.sendStateTyping();
+            } catch {
+                // ignore
+            }
+        }, preDelayMs);
+    }
     
-    // Start initial processing
-    scheduleProcessing(delay);
+    // Set initial timer for 10 seconds
+    const timer = setTimeout(async () => {
+        await processQueuedMessages();
+    }, delay);
     
-    // Set up a mechanism to extend delay when new messages arrive
-    const originalProcessingTime = processingUsers[senderNumber];
-    const checkForNewMessages = setInterval(() => {
-        // If user is no longer being processed, stop checking
-        if (!(processingUsers as any)[`${senderNumber}_processing`]) {
-            clearInterval(checkForNewMessages);
-            return;
-        }
-        
-        // If new messages arrived, extend the delay
-        const currentQueueLength = messageQueue[senderNumber]?.length || 0;
-        const timeSinceStart = Date.now() - originalProcessingTime;
-        
-        // If we're still within the original delay window and new messages arrived
-        if (timeSinceStart < delay && currentQueueLength > 1) {
-            console.log(`New messages detected for ${senderNumber}, extending delay...`);
-            
-            // Extend the delay by resetting the processing time
-            processingUsers[senderNumber] = Date.now();
-            
-            // Reschedule processing with full delay
-            scheduleProcessing(delay);
-        }
-    }, 1000); // Check every second
+    // Store the timer reference
+    (processingUsers as any)[`${senderNumber}_timer`] = timer;
 }
 
 // Function to fetch the last 10 messages after the latest reply and reply after a delay
