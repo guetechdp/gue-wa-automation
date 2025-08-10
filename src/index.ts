@@ -290,8 +290,9 @@ async function handleIncomingMessage(sender: string, message: Message, delay: nu
         return;
     }
     
-    // Mark user as being processed with timestamp
+    // Mark user as being processed with timestamp and processing state
     processingUsers[senderNumber] = Date.now();
+    (processingUsers as any)[`${senderNumber}_processing`] = true;
     
     // Prepare chat for pre-reply actions
     let preReplyChat: Chat | null = null;
@@ -301,122 +302,113 @@ async function handleIncomingMessage(sender: string, message: Message, delay: nu
         console.log('Could not prepare chat for pre-reply actions');
     }
     
-    // Function to process messages with dynamic delay
-    const processMessagesWithDelay = async (currentDelay: number) => {
-        // Prevent multiple processing instances
-        if (!processingUsers[senderNumber]) {
+    // Single timer for processing
+    let processingTimer: NodeJS.Timeout | null = null;
+    
+    // Function to process all queued messages
+    const processQueuedMessages = async () => {
+        // Check if already processed
+        if (!(processingUsers as any)[`${senderNumber}_processing`]) {
             console.log(`Processing already completed for ${senderNumber}, skipping`);
             return;
         }
         
         try {
-            // Schedule sendSeen + typing at a random moment within the waiting window
-            if (preReplyChat) {
-                const minPreDelay = Math.max(0, Math.floor(currentDelay * 0.3));
-                const maxPreDelay = Math.max(minPreDelay, Math.floor(currentDelay * 0.8));
-                const preDelayMs = minPreDelay + Math.floor(Math.random() * (maxPreDelay - minPreDelay + 1));
-                setTimeout(async () => {
+            // Get all queued messages for this user
+            const queuedMessages = messageQueue[senderNumber] || [];
+            
+            if (queuedMessages.length > 0) {
+                // Get the chat reference
+                const chatRef: Chat = preReplyChat || await message.getChat();
+                
+                // Combine all queued messages into one string
+                const combinedUserMessages = queuedMessages
+                    .map(item => item.message.body)
+                    .join('\n');
+                
+                // If we have user messages to process
+                if (combinedUserMessages && combinedUserMessages.trim()) {
                     try {
-                        await preReplyChat!.sendSeen();
-                        await preReplyChat!.sendStateTyping();
-                    } catch {
-                        // ignore
-                    }
-                }, preDelayMs);
+                        await chatRef.sendSeen();
+                        await chatRef.sendStateTyping();
+                    } catch {}
+                    console.log(`Processing ${queuedMessages.length} messages from ${senderNumber}`);
+                    console.log(`Combined messages: "${combinedUserMessages}"`);
+                    await sendMessage(senderNumber, combinedUserMessages, null, false, null);
+                } else {
+                    console.log(`No valid messages to process for ${senderNumber}`);
+                }
             }
-            
-            // Wait for the specified delay
-            setTimeout(async () => {
-                // Double-check that processing is still active
-                if (!processingUsers[senderNumber]) {
-                    console.log(`Processing already completed for ${senderNumber}, skipping execution`);
-                    return;
-                }
-                try {
-                    // Get all queued messages for this user
-                    const queuedMessages = messageQueue[senderNumber] || [];
-                    
-                    if (queuedMessages.length > 0) {
-                        // Get the chat reference
-                        const chatRef: Chat = preReplyChat || await message.getChat();
-                        
-                        // Combine all queued messages into one string
-                        const combinedUserMessages = queuedMessages
-                            .map(item => item.message.body)
-                            .join('\n');
-                        
-                        // If we have user messages to process
-                        if (combinedUserMessages && combinedUserMessages.trim()) {
-                            try {
-                                await chatRef.sendSeen();
-                                await chatRef.sendStateTyping();
-                            } catch {}
-                            console.log(`Processing ${queuedMessages.length} messages from ${senderNumber}`);
-                            console.log(`Combined messages: "${combinedUserMessages}"`);
-                            await sendMessage(senderNumber, combinedUserMessages, null, false, null);
-                        } else {
-                            console.log(`No valid messages to process for ${senderNumber}`);
-                        }
-                    }
-                } catch (error) {
-                    console.error(`Error processing messages for ${senderNumber}:`, error);
-                } finally {
-                    // Mark all processed messages as processed to prevent duplicates BEFORE cleanup
-                    const queuedMessages = messageQueue[senderNumber] || [];
-                    queuedMessages.forEach(item => {
-                        const messageId = item.message.id._serialized;
-                        processingUsers[`${senderNumber}_${messageId}`] = Date.now();
-                    });
-                    
-                    // Clean up
-                    delete messageQueue[senderNumber];
-                    delete processingUsers[senderNumber];
-                }
-            }, currentDelay);
-            
         } catch (error) {
-            console.error(`Error setting up message processing for ${senderNumber}:`, error);
-            // Clean up on error
+            console.error(`Error processing messages for ${senderNumber}:`, error);
+        } finally {
+            // Mark all processed messages as processed to prevent duplicates BEFORE cleanup
+            const queuedMessages = messageQueue[senderNumber] || [];
+            queuedMessages.forEach(item => {
+                const messageId = item.message.id._serialized;
+                processingUsers[`${senderNumber}_${messageId}`] = Date.now();
+            });
+            
+            // Clean up
             delete messageQueue[senderNumber];
             delete processingUsers[senderNumber];
+            delete (processingUsers as any)[`${senderNumber}_processing`];
         }
     };
     
-    // Start processing with initial delay
-    await processMessagesWithDelay(delay);
+    // Function to schedule processing with delay
+    const scheduleProcessing = (currentDelay: number) => {
+        // Clear any existing timer
+        if (processingTimer) {
+            clearTimeout(processingTimer);
+        }
+        
+        // Schedule sendSeen + typing at a random moment within the waiting window
+        if (preReplyChat) {
+            const minPreDelay = Math.max(0, Math.floor(currentDelay * 0.3));
+            const maxPreDelay = Math.max(minPreDelay, Math.floor(currentDelay * 0.8));
+            const preDelayMs = minPreDelay + Math.floor(Math.random() * (maxPreDelay - minPreDelay + 1));
+            setTimeout(async () => {
+                try {
+                    await preReplyChat!.sendSeen();
+                    await preReplyChat!.sendStateTyping();
+                } catch {
+                    // ignore
+                }
+            }, preDelayMs);
+        }
+        
+        // Schedule the main processing
+        processingTimer = setTimeout(processQueuedMessages, currentDelay);
+    };
     
-         // Set up a mechanism to extend delay when new messages arrive
-     const originalProcessingTime = processingUsers[senderNumber];
-     let isRestarting = false;
-     const checkForNewMessages = setInterval(() => {
-         // If user is no longer being processed, stop checking
-         if (!processingUsers[senderNumber]) {
-             clearInterval(checkForNewMessages);
-             return;
-         }
-         
-         // Prevent multiple restarts
-         if (isRestarting) {
-             return;
-         }
-         
-         // If new messages arrived, extend the delay
-         const currentQueueLength = messageQueue[senderNumber]?.length || 0;
-         const timeSinceStart = Date.now() - originalProcessingTime;
-         
-         // If we're still within the original delay window and new messages arrived
-         if (timeSinceStart < delay && currentQueueLength > 1) {
-             console.log(`New messages detected for ${senderNumber}, extending delay...`);
-             isRestarting = true;
-             
-             // Extend the delay by resetting the processing time
-             processingUsers[senderNumber] = Date.now();
-             
-             // Restart processing with full delay
-             clearInterval(checkForNewMessages);
-             processMessagesWithDelay(delay);
-         }
-     }, 1000); // Check every second
+    // Start initial processing
+    scheduleProcessing(delay);
+    
+    // Set up a mechanism to extend delay when new messages arrive
+    const originalProcessingTime = processingUsers[senderNumber];
+    const checkForNewMessages = setInterval(() => {
+        // If user is no longer being processed, stop checking
+        if (!(processingUsers as any)[`${senderNumber}_processing`]) {
+            clearInterval(checkForNewMessages);
+            return;
+        }
+        
+        // If new messages arrived, extend the delay
+        const currentQueueLength = messageQueue[senderNumber]?.length || 0;
+        const timeSinceStart = Date.now() - originalProcessingTime;
+        
+        // If we're still within the original delay window and new messages arrived
+        if (timeSinceStart < delay && currentQueueLength > 1) {
+            console.log(`New messages detected for ${senderNumber}, extending delay...`);
+            
+            // Extend the delay by resetting the processing time
+            processingUsers[senderNumber] = Date.now();
+            
+            // Reschedule processing with full delay
+            scheduleProcessing(delay);
+        }
+    }, 1000); // Check every second
 }
 
 // Function to fetch the last 10 messages after the latest reply and reply after a delay
