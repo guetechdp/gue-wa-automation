@@ -303,6 +303,12 @@ async function handleIncomingMessage(sender: string, message: Message, delay: nu
     
     // Function to process messages with dynamic delay
     const processMessagesWithDelay = async (currentDelay: number) => {
+        // Prevent multiple processing instances
+        if (!processingUsers[senderNumber]) {
+            console.log(`Processing already completed for ${senderNumber}, skipping`);
+            return;
+        }
+        
         try {
             // Schedule sendSeen + typing at a random moment within the waiting window
             if (preReplyChat) {
@@ -321,6 +327,11 @@ async function handleIncomingMessage(sender: string, message: Message, delay: nu
             
             // Wait for the specified delay
             setTimeout(async () => {
+                // Double-check that processing is still active
+                if (!processingUsers[senderNumber]) {
+                    console.log(`Processing already completed for ${senderNumber}, skipping execution`);
+                    return;
+                }
                 try {
                     // Get all queued messages for this user
                     const queuedMessages = messageQueue[senderNumber] || [];
@@ -350,16 +361,16 @@ async function handleIncomingMessage(sender: string, message: Message, delay: nu
                 } catch (error) {
                     console.error(`Error processing messages for ${senderNumber}:`, error);
                 } finally {
-                    // Clean up
-                    delete messageQueue[senderNumber];
-                    delete processingUsers[senderNumber];
-                    
-                    // Mark all processed messages as processed to prevent duplicates
+                    // Mark all processed messages as processed to prevent duplicates BEFORE cleanup
                     const queuedMessages = messageQueue[senderNumber] || [];
                     queuedMessages.forEach(item => {
                         const messageId = item.message.id._serialized;
                         processingUsers[`${senderNumber}_${messageId}`] = Date.now();
                     });
+                    
+                    // Clean up
+                    delete messageQueue[senderNumber];
+                    delete processingUsers[senderNumber];
                 }
             }, currentDelay);
             
@@ -374,30 +385,38 @@ async function handleIncomingMessage(sender: string, message: Message, delay: nu
     // Start processing with initial delay
     await processMessagesWithDelay(delay);
     
-    // Set up a mechanism to extend delay when new messages arrive
-    const originalProcessingTime = processingUsers[senderNumber];
-    const checkForNewMessages = setInterval(() => {
-        // If user is no longer being processed, stop checking
-        if (!processingUsers[senderNumber]) {
-            clearInterval(checkForNewMessages);
-            return;
-        }
-        
-        // If new messages arrived, extend the delay
-        const currentQueueLength = messageQueue[senderNumber]?.length || 0;
-        const timeSinceStart = Date.now() - originalProcessingTime;
-        
-        // If we're still within the original delay window and new messages arrived
-        if (timeSinceStart < delay && currentQueueLength > 1) {
-            console.log(`New messages detected for ${senderNumber}, extending delay...`);
-            // Extend the delay by resetting the processing time
-            processingUsers[senderNumber] = Date.now();
-            
-            // Restart processing with full delay
-            clearInterval(checkForNewMessages);
-            processMessagesWithDelay(delay);
-        }
-    }, 1000); // Check every second
+         // Set up a mechanism to extend delay when new messages arrive
+     const originalProcessingTime = processingUsers[senderNumber];
+     let isRestarting = false;
+     const checkForNewMessages = setInterval(() => {
+         // If user is no longer being processed, stop checking
+         if (!processingUsers[senderNumber]) {
+             clearInterval(checkForNewMessages);
+             return;
+         }
+         
+         // Prevent multiple restarts
+         if (isRestarting) {
+             return;
+         }
+         
+         // If new messages arrived, extend the delay
+         const currentQueueLength = messageQueue[senderNumber]?.length || 0;
+         const timeSinceStart = Date.now() - originalProcessingTime;
+         
+         // If we're still within the original delay window and new messages arrived
+         if (timeSinceStart < delay && currentQueueLength > 1) {
+             console.log(`New messages detected for ${senderNumber}, extending delay...`);
+             isRestarting = true;
+             
+             // Extend the delay by resetting the processing time
+             processingUsers[senderNumber] = Date.now();
+             
+             // Restart processing with full delay
+             clearInterval(checkForNewMessages);
+             processMessagesWithDelay(delay);
+         }
+     }, 1000); // Check every second
 }
 
 // Function to fetch the last 10 messages after the latest reply and reply after a delay
