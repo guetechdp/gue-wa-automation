@@ -326,36 +326,13 @@ async function handleIncomingMessage(sender: string, message: Message, delay: nu
                     const queuedMessages = messageQueue[senderNumber] || [];
                     
                     if (queuedMessages.length > 0) {
-                        // Get the chat and fetch recent messages
+                        // Get the chat reference
                         const chatRef: Chat = preReplyChat || await message.getChat();
-                        const recentMessages: Message[] = await chatRef.fetchMessages({ limit: 20 });
                         
-                        // Find the latest message from the bot
-                        const myMessages = recentMessages.filter(msg => msg.from === myWhatsAppNumber);
-                        let latestBotMessage: Message | null = null;
-                        
-                        if (myMessages.length > 0) {
-                            latestBotMessage = myMessages[myMessages.length - 1] || null;
-                        }
-                        
-                        // Combine all user messages since the last bot response
-                        let combinedUserMessages = '';
-                        if (latestBotMessage) {
-                            // Get messages after the last bot message
-                            const userMessagesAfterBot = recentMessages.filter(msg => 
-                                msg.timestamp > latestBotMessage!.timestamp && 
-                                !msg.fromMe && 
-                                msg.from === message.from
-                            );
-                            combinedUserMessages = userMessagesAfterBot.map(msg => msg.body).join('\n');
-                        } else {
-                            // If no previous bot message, combine all recent user messages
-                            const userMessages = recentMessages.filter(msg => 
-                                !msg.fromMe && 
-                                msg.from === message.from
-                            );
-                            combinedUserMessages = userMessages.map(msg => msg.body).join('\n');
-                        }
+                        // Combine all queued messages into one string
+                        const combinedUserMessages = queuedMessages
+                            .map(item => item.message.body)
+                            .join('\n');
                         
                         // If we have user messages to process
                         if (combinedUserMessages && combinedUserMessages.trim()) {
@@ -377,9 +354,12 @@ async function handleIncomingMessage(sender: string, message: Message, delay: nu
                     delete messageQueue[senderNumber];
                     delete processingUsers[senderNumber];
                     
-                    // Mark this message as processed to prevent duplicates
-                    const messageId = message.id._serialized;
-                    processingUsers[`${senderNumber}_${messageId}`] = Date.now();
+                    // Mark all processed messages as processed to prevent duplicates
+                    const queuedMessages = messageQueue[senderNumber] || [];
+                    queuedMessages.forEach(item => {
+                        const messageId = item.message.id._serialized;
+                        processingUsers[`${senderNumber}_${messageId}`] = Date.now();
+                    });
                 }
             }, currentDelay);
             
