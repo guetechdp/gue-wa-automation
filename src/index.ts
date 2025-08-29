@@ -309,12 +309,8 @@ async function handleIncomingMessage(sender: string, message: Message, delay: nu
                 
                 // If we have user messages to process
                 if (combinedUserMessages && combinedUserMessages.trim()) {
-                    try {
-                        await chatRef.sendSeen();
-                        await chatRef.sendStateTyping();
-                    } catch {}
-                    console.log(`Processing ${queuedMessages.length} messages from ${senderNumber}`);
-                    console.log(`Combined messages: "${combinedUserMessages}"`);
+                    console.log(`🔄 FINAL PROCESSING: ${queuedMessages.length} messages from ${senderNumber} after timer expired`);
+                    console.log(`📝 Combined messages: "${combinedUserMessages}"`);
                     await sendMessage(senderNumber, combinedUserMessages, null, false, null);
                 } else {
                     console.log(`No valid messages to process for ${senderNumber}`);
@@ -334,53 +330,80 @@ async function handleIncomingMessage(sender: string, message: Message, delay: nu
             delete messageQueue[senderNumber];
             delete processingUsers[senderNumber];
             delete (processingUsers as any)[`${senderNumber}_timer`];
+            delete (processingUsers as any)[`${senderNumber}_readTypingTimer`];
+            console.log(`🧹 Cleaned up processing state for ${senderNumber}`);
         }
     };
     
-    // If user is already being processed, extend the delay by another 10 seconds
-    if (processingUsers[senderNumber]) {
-        console.log(`Message from ${senderNumber} queued. Total queued: ${messageQueue[senderNumber].length}`);
-        console.log(`Extending delay by ${delay}ms for ${senderNumber}`);
-        
-        // Clear the existing timer and set a new one for another 10 seconds
-        if ((processingUsers as any)[`${senderNumber}_timer`]) {
-            clearTimeout((processingUsers as any)[`${senderNumber}_timer`]);
+    // Function to schedule read and typing indicators
+    const scheduleReadAndTyping = (chat: Chat, delayMs: number) => {
+        // Clear any existing read/typing timer
+        if ((processingUsers as any)[`${senderNumber}_readTypingTimer`]) {
+            clearTimeout((processingUsers as any)[`${senderNumber}_readTypingTimer`]);
         }
         
-        // Set new timer for another 10 seconds
+        // Schedule read and typing at a random moment within the delay window
+        const minPreDelay = Math.max(0, Math.floor(delayMs * 0.3));
+        const maxPreDelay = Math.max(minPreDelay, Math.floor(delayMs * 0.8));
+        const preDelayMs = minPreDelay + Math.floor(Math.random() * (maxPreDelay - minPreDelay + 1));
+        
+        const readTypingTimer = setTimeout(async () => {
+            try {
+                await chat.sendSeen();
+                await chat.sendStateTyping();
+            } catch {
+                // ignore
+            }
+        }, preDelayMs);
+        
+        (processingUsers as any)[`${senderNumber}_readTypingTimer`] = readTypingTimer;
+    };
+    
+    // If user is already being processed, reset the timer to 10 seconds
+    if (processingUsers[senderNumber]) {
+        console.log(`⏰ Message from ${senderNumber} queued. Total queued: ${messageQueue[senderNumber].length}`);
+        console.log(`🔄 Resetting timer to ${delay}ms for ${senderNumber}`);
+        
+        // Clear the existing timer and set a new one for 10 seconds
+        if ((processingUsers as any)[`${senderNumber}_timer`]) {
+            clearTimeout((processingUsers as any)[`${senderNumber}_timer`]);
+            console.log(`⏰ Cleared previous timer for ${senderNumber}`);
+        }
+        
+        // Reschedule read and typing indicators for the new delay
+        if (preReplyChat) {
+            scheduleReadAndTyping(preReplyChat, delay);
+        }
+        
+        // Set new timer for 10 seconds (not extending, but resetting)
         const newTimer = setTimeout(async () => {
+            console.log(`⏰ Timer expired for ${senderNumber}, processing queued messages...`);
             await processQueuedMessages();
         }, delay);
         
         (processingUsers as any)[`${senderNumber}_timer`] = newTimer;
+        console.log(`⏰ New timer set for ${senderNumber} (${delay}ms)`);
         return;
     }
     
     // Mark user as being processed with timestamp
     processingUsers[senderNumber] = Date.now();
+    console.log(`🚀 Starting initial processing for ${senderNumber}`);
     
-    // Schedule sendSeen + typing at a random moment within the waiting window
+    // Schedule read and typing indicators for the initial delay
     if (preReplyChat) {
-        const minPreDelay = Math.max(0, Math.floor(delay * 0.3));
-        const maxPreDelay = Math.max(minPreDelay, Math.floor(delay * 0.8));
-        const preDelayMs = minPreDelay + Math.floor(Math.random() * (maxPreDelay - minPreDelay + 1));
-        setTimeout(async () => {
-            try {
-                await preReplyChat!.sendSeen();
-                await preReplyChat!.sendStateTyping();
-            } catch {
-                // ignore
-            }
-        }, preDelayMs);
+        scheduleReadAndTyping(preReplyChat, delay);
     }
     
     // Set initial timer for 10 seconds
     const timer = setTimeout(async () => {
+        console.log(`⏰ Initial timer expired for ${senderNumber}, processing queued messages...`);
         await processQueuedMessages();
     }, delay);
     
     // Store the timer reference
     (processingUsers as any)[`${senderNumber}_timer`] = timer;
+    console.log(`⏰ Initial timer set for ${senderNumber} (${delay}ms)`);
 }
 
 // Function to fetch the last 10 messages after the latest reply and reply after a delay
@@ -764,7 +787,7 @@ const sendMessage = async (
                 // 3) bare media URLs by extension
                 const mediaExtPattern = '(?:png|jpe?g|gif|webp|bmp|svg|mp4|mov|m4v|webm|avi|mkv|mp3|wav|ogg|m4a|aac)';
                 const combined = new RegExp(
-                    `(__MEDIA_(\\d+)__|\\[\\[MEDIA_(\\d+)\\]\\])|@\\s*(https?:\\/\\/[^\\s]+?\\.(?:${mediaExtPattern})(?:[?#][^\\s]*)?)|(https?:\\/\\/[^\\s]+?\\.(?:${mediaExtPattern})(?:[?#][^\\s]*)?)`,
+                    `(__MEDIA_(\\d+)__|\\[\\[MEDIA_(\\d+)\\]\\])|@\\s*(https?:\\/\\/[^\\s]+\\.(?:${mediaExtPattern})(?:[?#][^\\s]*)?)|(https?:\\/\\/[^\\s]+\\.(?:${mediaExtPattern})(?:[?#][^\\s]*)?)`,
                     'gi'
                 );
                 let lastIndex = 0;
@@ -973,6 +996,65 @@ app.get('/bot/status', (req: Request, res: Response) => {
     });
 });
 
+// Disconnect WhatsApp session endpoint
+app.post('/bot/disconnect', async (req: Request, res: Response) => {
+    try {
+        const isAuthenticated = client.info !== null && client.info !== undefined;
+        
+        if (!isAuthenticated) {
+            return res.status(400).json({
+                success: false,
+                message: 'WhatsApp client is not authenticated',
+                timestamp: new Date().toISOString()
+            });
+        }
+
+        console.log('🔄 Disconnecting WhatsApp client...');
+        
+        // Destroy the client
+        await client.destroy();
+        
+        // Clear session data
+        try {
+            if (fs.existsSync(SESSION_PATH)) {
+                const sessionFiles = fs.readdirSync(SESSION_PATH);
+                sessionFiles.forEach(file => {
+                    const filePath = path.join(SESSION_PATH, file);
+                    if (fs.statSync(filePath).isDirectory()) {
+                        fs.rmSync(filePath, { recursive: true, force: true });
+                    } else {
+                        fs.unlinkSync(filePath);
+                    }
+                });
+                console.log('🧹 Session data cleared');
+            }
+        } catch (error) {
+            console.log('⚠️ Could not clear session data:', error);
+        }
+
+        // Reset global variables
+        myWhatsAppNumber = null;
+        currentQRCode = null;
+
+        console.log('✅ WhatsApp client disconnected successfully');
+        
+        res.status(200).json({
+            success: true,
+            message: 'WhatsApp client disconnected successfully. You will need to scan QR code again to reconnect.',
+            timestamp: new Date().toISOString()
+        });
+        
+    } catch (error) {
+        console.error('❌ Error disconnecting WhatsApp client:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to disconnect WhatsApp client',
+            error: error instanceof Error ? error.message : 'Unknown error',
+            timestamp: new Date().toISOString()
+        });
+    }
+});
+
 // Start Express server
 const PORT: number = Number(env.PORT) || 3000;
 app.listen(PORT, () => {
@@ -1065,4 +1147,4 @@ setInterval(() => {
             console.log(`Cleaned up stale processing state for ${user}`);
         }
     });
-}, 60000); // Check every minute 
+}, 60000); // Check every minute
