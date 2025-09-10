@@ -456,6 +456,53 @@ app.post('/greetings', async (req, res) => {
     }
 });
 
+
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+    res.status(200).json({
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        memory: process.memoryUsage(),
+        environment: process.env.NODE_ENV
+    });
+});
+
+// Bot status endpoint
+app.get('/bot/status', (req, res) => {
+    const isAuthenticated = client.info !== null && client.info !== undefined;
+    res.status(200).json({
+        success: true,
+        authenticated: isAuthenticated,
+        bot_phone_number: myWhatsAppNumber,
+        uptime: process.uptime(),
+        timestamp: new Date().toISOString(),
+        message: isAuthenticated ? 'Bot is ready and authenticated' : 'Bot is waiting for authentication'
+    });
+});
+
+// Disconnect WhatsApp session endpoint
+app.post('/bot/disconnect', (req, res) => {
+    const isAuthenticated = client.info !== null && client.info !== undefined;
+    
+    if (!isAuthenticated) {
+        return res.status(400).json({
+            success: false,
+            message: 'WhatsApp client is not authenticated',
+            timestamp: new Date().toISOString()
+        });
+    }
+
+    console.log('🔄 Disconnect endpoint called');
+    
+    res.status(200).json({
+        success: true,
+        message: 'Disconnect endpoint reached successfully',
+        timestamp: new Date().toISOString()
+    });
+});
+
 // Start Express server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {

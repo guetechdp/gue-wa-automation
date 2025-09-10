@@ -939,68 +939,6 @@ app.post('/greetings', async (req: Request<{}, {}, GreetingRequest>, res: Respon
     }
 });
 
-// Disconnect WhatsApp session endpoint
-app.post('/bot/disconnect', async (req: Request, res: Response) => {
-    try {
-        const isAuthenticated = client.info !== null && client.info !== undefined;
-        
-        if (!isAuthenticated) {
-            return res.status(400).json({
-                success: false,
-                message: 'WhatsApp client is not authenticated',
-                timestamp: new Date().toISOString()
-            });
-        }
-
-        console.log('🔄 Disconnecting WhatsApp client...');
-        
-        // Destroy the client
-        await client.destroy();
-        
-        // Clear session data
-        try {
-            if (fs.existsSync(SESSION_PATH)) {
-                const sessionFiles = fs.readdirSync(SESSION_PATH);
-                sessionFiles.forEach(file => {
-                    const filePath = path.join(SESSION_PATH, file);
-                    if (fs.statSync(filePath).isDirectory()) {
-                        fs.rmSync(filePath, { recursive: true, force: true });
-                    } else {
-                        fs.unlinkSync(filePath);
-                    }
-                });
-                console.log('🧹 Session data cleared');
-            }
-        } catch (error) {
-            console.log('⚠️ Could not clear session data:', error);
-        }
-
-        // Reset global variables
-        myWhatsAppNumber = null;
-        currentQRCode = null;
-        
-        // Force clear client info to ensure QR code is available
-        (client as any).info = null;
-
-        console.log('✅ WhatsApp client disconnected successfully');
-        
-        return res.status(200).json({
-            success: true,
-            message: 'WhatsApp client disconnected successfully. You will need to scan QR code again to reconnect.',
-            timestamp: new Date().toISOString()
-        });
-        
-    } catch (error) {
-        console.error('❌ Error disconnecting WhatsApp client:', error);
-        return res.status(500).json({
-            success: false,
-            message: 'Failed to disconnect WhatsApp client',
-            error: error instanceof Error ? error.message : 'Unknown error',
-            timestamp: new Date().toISOString()
-        });
-    }
-});
-
 // Health check endpoint for Docker
 app.get('/health', (req: Request, res: Response) => {
     res.status(200).json({
@@ -1056,11 +994,6 @@ app.get('/bot/status', (req: Request, res: Response) => {
         timestamp: new Date().toISOString(),
         message: isAuthenticated ? 'Bot is ready and authenticated' : 'Bot is waiting for authentication'
     });
-});
-
-// Test endpoint
-app.get('/test', (req: Request, res: Response) => {
-    res.status(200).json({ message: 'Test endpoint working' });
 });
 
 // Start Express server
@@ -1155,4 +1088,4 @@ setInterval(() => {
             console.log(`Cleaned up stale processing state for ${user}`);
         }
     });
-}, 60000); // Check every minute
+}, 60000); // Check every minute 
