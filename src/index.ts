@@ -125,6 +125,9 @@ try {
 }
 
 const productionmode: boolean = env.NODE_ENV === 'production';
+console.log(`🌍 Environment: NODE_ENV=${env.NODE_ENV}, Production mode: ${productionmode}`);
+console.log(`🌍 FW_ENDPOINT: ${env.FW_ENDPOINT}`);
+console.log(`🌍 JWT_SECRET: ${env.JWT_SECRET ? 'SET' : 'NOT SET'}`);
 
 const app: ExpressApp = express();
 // Express Middleware
@@ -263,6 +266,7 @@ async function fetchMessagesAfterTimestamp(messages: Message[], timestamp: numbe
 
 // Improved function to handle message queuing and deduplication
 async function handleIncomingMessage(sender: string, message: Message, delay: number = 10000): Promise<void> {
+    console.log(`🔄 handleIncomingMessage called for ${sender} with delay ${delay}ms`);
     const senderNumber: string = sender;
     
     // Check if this exact message was already processed recently
@@ -698,13 +702,16 @@ const sendMessage = async (
     initial: boolean, 
     campaign: string | null
 ): Promise<void> => {
+    console.log(`📤 sendMessage called for ${number} with message: "${message}"`);
+    console.log(`📤 Initial: ${initial}, Campaign: ${campaign}`);
+    
     try {
         // Find the entry by the number field
         const numberEntry: NumberEntry | null = numbersCollection?.findOne({ number }) || null;
 
         let session: string | null = null;
-        console.log("numberEntry", numberEntry);
-        console.log("initial", initial);
+        console.log("📤 numberEntry", numberEntry);
+        console.log("📤 initial", initial);
         const formattedNumber = `${number}@c.us`;
         
         if (initial) {
@@ -729,11 +736,13 @@ const sendMessage = async (
         }
 
         let aiagent: AIAgentResponse;
+        console.log(`🤖 Calling AI API with message: "${message}"`);
         aiagent = await callInferenceFw(message, session || undefined, number, userName);
+        console.log(`🤖 AI Response received:`, aiagent);
         
         // Validate that we have a valid response text
         if (!aiagent || !aiagent.text) {
-            console.error('Invalid AI response:', aiagent);
+            console.error('❌ Invalid AI response:', aiagent);
             return;
         }
         
@@ -745,7 +754,7 @@ const sendMessage = async (
         }
         
         // Additional check for client state
-        if (!client.pupPage || !client.pupPage.isClosed) {
+        if (!client.pupPage || client.pupPage.isClosed()) {
             console.error('WhatsApp client page not ready');
             return;
         }
@@ -905,16 +914,25 @@ const sendMessage = async (
 
 // Event listener for incoming messages
 client.on('message', async (message: Message) => {
-    console.log("message triggered");
+    console.log("📨 Message triggered from:", message.from);
+    console.log("📨 Message body:", message.body);
+    console.log("📨 Production mode:", productionmode);
+    
     // Check if the sender's number is in the allowed numbers list
     const senderNumberParts = message.from.split('@');
     const senderNumber: string = senderNumberParts[0] || ''; // Get the number without the domain
+    
+    console.log("📨 Sender number:", senderNumber);
+    console.log("📨 Allowed numbers:", allowedNumbers);
+    
     if (productionmode) {
+        console.log("📨 Processing message in production mode");
         await handleIncomingMessage(senderNumber, message, messagewaitingtime);
     } else {
         if (allowedNumbers.includes(senderNumber)) {
-            console.log(`Message from ${senderNumber} ignored.`);
+            console.log(`📨 Message from ${senderNumber} ignored (whitelisted).`);
         } else {
+            console.log("📨 Processing message in development mode");
             await handleIncomingMessage(senderNumber, message, messagewaitingtime);
         }
     }
