@@ -637,8 +637,9 @@ setTimeout(async () => {
     console.log('⏰ 30-second timeout check - checking client state...');
     console.log('⏰ Client info:', client.info);
     
+    let state: string | null = null;
     try {
-        const state = await client.getState();
+        state = await client.getState();
         console.log('⏰ Client state:', state);
     } catch (error) {
         console.log('⏰ Error getting client state:', error);
@@ -664,6 +665,53 @@ setTimeout(async () => {
             }
         } catch (error) {
             console.log('🧪 Manual client test failed:', error);
+        }
+    } else if (state === 'CONNECTED' && !client.info) {
+        console.log('⏰ Client is CONNECTED but info is undefined - trying aggressive info loading...');
+        
+        // Try multiple approaches to get client info
+        try {
+            // Approach 1: Try to get chats to trigger info loading
+            console.log('🔄 Approach 1: Getting chats to trigger info loading...');
+            const chats = await client.getChats();
+            console.log(`🔄 Got ${chats.length} chats`);
+            
+            // Wait and check again
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            if (client.info && (client.info as any).wid) {
+                myWhatsAppNumber = (client.info as any).wid._serialized;
+                console.log("📞 Bot phone number (loaded via chats):", myWhatsAppNumber);
+            } else {
+                // Approach 2: Try to navigate to a specific page
+                console.log('🔄 Approach 2: Trying to navigate to trigger info loading...');
+                const page = client.pupPage;
+                if (page) {
+                    await page.goto('https://web.whatsapp.com/', { waitUntil: 'networkidle0' });
+                    await new Promise(resolve => setTimeout(resolve, 5000));
+                    
+                    if (client.info && (client.info as any).wid) {
+                        myWhatsAppNumber = (client.info as any).wid._serialized;
+                        console.log("📞 Bot phone number (loaded via navigation):", myWhatsAppNumber);
+                    }
+                }
+            }
+        } catch (error) {
+            console.log('🔄 Error during aggressive info loading:', error);
+        }
+        
+        // If still no info, try reinitialize
+        if (!client.info) {
+            console.log('🔄 Still no client.info after aggressive loading - attempting reinitialize...');
+            try {
+                await client.destroy();
+                console.log('🔄 Client destroyed, reinitializing...');
+                setTimeout(() => {
+                    client.initialize();
+                    console.log('🔄 Client reinitialized');
+                }, 2000);
+            } catch (error) {
+                console.log('🔄 Error during force reinitialize:', error);
+            }
         }
     } else {
         console.log('⏰ Client not ready - info:', client.info, 'myWhatsAppNumber:', myWhatsAppNumber);
@@ -692,7 +740,7 @@ client.on('qr', (qr: string) => {
     currentQRCode = qr; // Store QR code in global variable
 });
 
-client.on('ready', async () => {
+client.once('ready', async () => {
     console.log('✅ WhatsApp client is ready!');
     console.log('🤖 Bot is now active and listening for messages');
     console.log(`💾 Session data persisted at: ${SESSION_PATH}`);
@@ -751,17 +799,32 @@ client.on('authenticated', () => {
             const state = await client.getState();
             console.log('🔄 Client state after 5s:', state);
             
-            if (state === 'CONNECTED' && client.info && !myWhatsAppNumber) {
-                console.log('🔄 Client is connected but ready event didn\'t fire - manually setting up...');
-                myWhatsAppNumber = client.info.wid._serialized;
-                console.log("📞 Bot phone number (manual from authenticated):", myWhatsAppNumber);
+            if (state === 'CONNECTED' && !myWhatsAppNumber) {
+                console.log('🔄 Client is connected but info not loaded - attempting to force load...');
                 
-                // Test if we can get chats
+                // Try to force load user info by getting chats first
                 try {
                     const chats = await client.getChats();
-                    console.log(`🧪 Client test after auth - found ${chats.length} chats`);
+                    console.log(`🧪 Got ${chats.length} chats, checking client info again...`);
+                    
+                    // Wait a bit more for client.info to populate
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    
+                    if (client.info) {
+                        myWhatsAppNumber = client.info.wid._serialized;
+                        console.log("📞 Bot phone number (loaded after chats):", myWhatsAppNumber);
+                    } else {
+                        console.log('🔄 Still no client.info, trying to get it from page...');
+                        
+                        // Wait a bit more and check again
+                        await new Promise(resolve => setTimeout(resolve, 3000));
+                        if (client.info && (client.info as any).wid) {
+                            myWhatsAppNumber = (client.info as any).wid._serialized;
+                            console.log("📞 Bot phone number (loaded after wait):", myWhatsAppNumber);
+                        }
+                    }
                 } catch (error) {
-                    console.log('🧪 Client test after auth failed:', error);
+                    console.log('🧪 Error getting chats to force info load:', error);
                 }
             }
         } catch (error) {
@@ -1014,7 +1077,7 @@ const sendMessage = async (
 
 // Event listener for incoming messages
 console.log("📨 Registering message event handler...");
-client.on('message', async (message: Message) => {
+client.on('message_create', async (message: Message) => {
     console.log("📨 Message triggered from:", message.from);
     console.log("📨 Message body:", message.body);
     console.log("📨 Production mode:", productionmode);
