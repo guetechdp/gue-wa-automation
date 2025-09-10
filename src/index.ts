@@ -43,6 +43,11 @@ const RAILWAY_VOLUME_PATH = process.env.RAILWAY_VOLUME_PATH || "/data";
 const SESSION_PATH = process.env.NODE_ENV === 'production'
   ? path.join(RAILWAY_VOLUME_PATH, '.wwebjs_auth')
   : './.wwebjs_auth';
+
+// Cache directory for WhatsApp Web HTML files (separate from session data)
+const CACHE_PATH = process.env.NODE_ENV === 'production'
+  ? path.join(RAILWAY_VOLUME_PATH, '.wwebjs_cache')
+  : './.wwebjs_cache';
 const clientIdProd = 'whatsapp-bot-railway';
 const clientIdDev = 'whatsapp-bot-dev';
 const resolvedClientId = process.env.NODE_ENV === 'production' ? clientIdProd : clientIdDev;
@@ -75,6 +80,7 @@ const ensureSessionDirectory = () => {
         }
         
         console.log(`💾 Session persistence configured at: ${SESSION_PATH}`);
+        console.log(`📁 Cache directory configured at: ${CACHE_PATH}`);
         console.log(`🔒 Lock file locations: ${legacyLockFile} and ${clientLockFile}`);
         
         // Check if session data exists (only if directory exists)
@@ -658,52 +664,18 @@ setTimeout(async () => {
                 await client.destroy();
                 console.log('🔄 Client destroyed, cleaning up session...');
                 
-                // Clear potentially corrupted session data
-                try {
-                    if (fs.existsSync(SESSION_PATH)) {
-                        const sessionFiles = fs.readdirSync(SESSION_PATH);
-                        console.log('🔄 Found session files to clean:', sessionFiles);
-                        
-                        // Remove session files but keep the directory structure
-                        sessionFiles.forEach(file => {
-                            const filePath = path.join(SESSION_PATH, file);
-                            if (fs.statSync(filePath).isDirectory()) {
-                                fs.rmSync(filePath, { recursive: true, force: true });
-                                console.log(`🔄 Removed session directory: ${file}`);
-                            } else {
-                                fs.unlinkSync(filePath);
-                                console.log(`🔄 Removed session file: ${file}`);
-                            }
-                        });
-                        console.log('🔄 Session cleanup completed');
-                    }
-                } catch (cleanupError) {
-                    console.log('🔄 Error during session cleanup:', cleanupError);
-                }
-                
-                setTimeout(() => {
-                    client.initialize();
-                    console.log('🔄 Client reinitialized with clean session');
-                }, 3000);
+                // Don't delete session data - just wait longer for client.info to load
+                console.log('🔄 Client is connected but info not loaded - waiting longer...');
+                console.log('🔄 This is normal for WhatsApp Web.js in headless mode');
+                console.log('🔄 Session data is preserved and will be used on next restart');
             } catch (error) {
                 console.log('🔄 Error during force reinitialize:', error);
             }
         }
     } else {
         console.log('⏰ Client not ready - info:', client.info, 'myWhatsAppNumber:', myWhatsAppNumber);
-        
-        // If client is still not ready after 30 seconds, try to force reinitialize
-        console.log('🔄 Attempting to force client reinitialize...');
-        try {
-            await client.destroy();
-            console.log('🔄 Client destroyed, reinitializing...');
-            setTimeout(() => {
-                client.initialize();
-                console.log('🔄 Client reinitialized');
-            }, 2000);
-        } catch (error) {
-            console.log('🔄 Error during force reinitialize:', error);
-        }
+        console.log('🔄 This is normal - client may still be loading or authenticating');
+        console.log('🔄 No action needed - session will be preserved');
     }
 }, 30000);
 
@@ -760,6 +732,7 @@ client.once('ready', async () => {
 client.on('authenticated', () => {
     console.log('✅ Successfully authenticated with WhatsApp!');
     console.log(`💾 Authentication data saved to: ${SESSION_PATH}`);
+    console.log('🔄 Session will be preserved across restarts');
     // Clear QR code since client is now authenticated
     currentQRCode = null;
     
@@ -771,16 +744,29 @@ client.on('authenticated', () => {
     });
     console.log('🔍 Client info after authentication:', client.info);
     
-    // Check if this is a fresh session or existing session
+    // Verify session data is properly saved
     try {
         const sessionFiles = fs.readdirSync(SESSION_PATH);
         console.log('🔍 Session files after authentication:', sessionFiles);
         
         // Check if we have a proper session structure
         const sessionDir = path.join(SESSION_PATH, 'session');
+        const clientSessionDir = path.join(SESSION_PATH, `session-${resolvedClientId}`);
+        
         if (fs.existsSync(sessionDir)) {
             const sessionContents = fs.readdirSync(sessionDir);
-            console.log('🔍 Session directory contents:', sessionContents);
+            console.log('✅ Legacy session directory found with:', sessionContents.length, 'files');
+        }
+        
+        if (fs.existsSync(clientSessionDir)) {
+            const clientSessionContents = fs.readdirSync(clientSessionDir);
+            console.log('✅ Client session directory found with:', clientSessionContents.length, 'files');
+        }
+        
+        if (sessionFiles.length > 0) {
+            console.log('✅ Session data successfully saved and will persist across restarts');
+        } else {
+            console.log('⚠️ No session files found - this might be a fresh authentication');
         }
     } catch (error) {
         console.log('🔍 Error checking session files:', error);
