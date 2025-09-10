@@ -583,47 +583,28 @@ const client: Client = new Client({
     puppeteer: {
         headless: true,
         ...(BROWSER_PATH && { executablePath: BROWSER_PATH }),
+        // Following WhatsApp Web.js docs for no-gui systems
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
             '--disable-gpu',
             '--no-first-run',
-            '--no-default-browser-check',
             '--disable-default-apps',
             '--disable-extensions',
-            '--disable-plugins',
             '--disable-sync',
             '--disable-translate',
             '--hide-scrollbars',
             '--mute-audio',
-            '--no-zygote',
             '--disable-background-networking',
-            '--disable-component-extensions-with-background-pages',
-            '--disable-client-side-phishing-detection',
-            '--disable-breakpad',
-            '--disable-features=Translate,BackForwardCache,AcceptCHFrame,AvoidUnnecessaryBeforeUnloadCheckSync',
+            '--disable-features=Translate,BackForwardCache',
             '--disable-hang-monitor',
             '--disable-popup-blocking',
             '--disable-prompt-on-repost',
             '--force-color-profile=srgb',
-            '--metrics-recording-only',
             '--enable-automation',
             '--password-store=basic',
-            '--use-mock-keychain',
-            '--enable-blink-features=IdleDetection',
-            '--export-tagged-pdf',
-            '--remote-debugging-port=0',
-            '--disable-process-singleton',
-            '--disable-single-process',
-            '--disable-background-timer-throttling',
-            '--disable-backgrounding-occluded-windows',
-            '--disable-renderer-backgrounding',
-            // Additional args to help with WhatsApp Web loading
-            '--disable-web-security',
-            '--disable-features=VizDisplayCompositor',
-            '--disable-ipc-flooding-protection',
-            // Allow LocalAuth to manage the Chromium user data dir for session persistence
+            '--use-mock-keychain'
         ],
         timeout: 120000,
         defaultViewport: null
@@ -743,10 +724,13 @@ client.once('ready', async () => {
     // Clear QR code since client is now authenticated
     currentQRCode = null;
 
+    // Wait a moment for client.info to be fully populated (following WhatsApp Web.js docs pattern)
+    await new Promise(resolve => setTimeout(resolve, 3000));
+
     // Get the current user's information
-    console.log('🔍 Checking client.info:', client.info);
-    if (client.info) {
-        myWhatsAppNumber = client.info.wid._serialized; // Format the number for use
+    console.log('🔍 Checking client.info after delay:', client.info);
+    if (client.info && (client.info as any).wid) {
+        myWhatsAppNumber = (client.info as any).wid._serialized; // Format the number for use
         console.log("📞 Bot phone number:", myWhatsAppNumber);
         
         // Verify session persistence
@@ -823,6 +807,8 @@ client.on('authenticated', () => {
                     console.log('🔄 Still no client.info - this might be a session issue');
                     console.log('🔄 Client info object:', client.info);
                     console.log('🔄 Client state:', state);
+                    console.log('🔄 This is a known issue with WhatsApp Web.js in headless mode');
+                    console.log('🔄 The client may still work for sending/receiving messages');
                 }
             }
         } catch (error) {
