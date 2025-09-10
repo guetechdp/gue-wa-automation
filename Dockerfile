@@ -59,6 +59,10 @@ ENV PUPPETEER_SKIP_DOWNLOAD=true
 ENV CHROMIUM_PATH=/usr/bin/chromium-browser
 ENV NODE_ENV=production
 
+# Set Railway-specific environment variables
+ENV RAILWAY_VOLUME_PATH=/data
+ENV PORT=8080
+
 # Set working directory
 WORKDIR /usr/src/app
 
@@ -85,12 +89,12 @@ RUN mkdir -p /data && \
     chmod -R 777 /data
 
 
-# Expose the app port (matches app default PORT=3000)
-EXPOSE 3000
+# Expose the app port (Railway uses PORT env var)
+EXPOSE 8080
 
-# Container-level healthcheck against the app's /health endpoint on port 3000
+# Container-level healthcheck against the app's /health endpoint
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=5 \
-    CMD node -e "require('http').get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })" || exit 1
+    CMD node -e "require('http').get('http://localhost:8080/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })" || exit 1
 
 # Use the startup script to handle user switching
 CMD ["/usr/src/app/start.sh"]

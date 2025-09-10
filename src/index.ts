@@ -176,7 +176,11 @@ let myWhatsAppNumber: string | null = null;
 
 async function callInferenceFw(messages: string, session?: string, phoneNumber?: string, userName?: string): Promise<AIAgentResponse> {
     try {
-        const url = env.FW_ENDPOINT || 'http://localhost:3000/api/agents/herbakofAssistanceAgent/generate';
+        let url = env.FW_ENDPOINT || 'http://localhost:3000/api/agents/herbakofAssistanceAgent/generate';
+        // Ensure URL has protocol
+        if (!url.startsWith('http://') && !url.startsWith('https://')) {
+            url = 'https://' + url;
+        }
         const jwtSecret = env.JWT_SECRET || 'your-jwt-secret-key';
         
         // Generate JWT token dynamically
@@ -628,6 +632,36 @@ console.log(`🔒 Using LocalAuth strategy for session persistence`);
 // Initialize the client (following the docs pattern)
 client.initialize();
 
+// Add a timeout to check if client is ready after 30 seconds
+setTimeout(async () => {
+    console.log('⏰ 30-second timeout check - checking client state...');
+    console.log('⏰ Client info:', client.info);
+    console.log('⏰ Client state:', client.getState());
+    
+    if (client.info && !myWhatsAppNumber) {
+        console.log('⏰ Client appears ready but ready event didn\'t fire - manually setting up...');
+        myWhatsAppNumber = client.info.wid._serialized;
+        console.log("📞 Bot phone number (manual):", myWhatsAppNumber);
+        
+        // Test if client is working
+        try {
+            const chats = await client.getChats();
+            console.log(`🧪 Manual client test successful - found ${chats.length} chats`);
+            
+            // Test if we can send a message to ourselves (this will trigger the message event)
+            console.log('🧪 Testing message event by sending a test message...');
+            try {
+                await client.sendMessage(myWhatsAppNumber, 'Test message to trigger event handler');
+                console.log('🧪 Test message sent successfully');
+            } catch (error) {
+                console.log('🧪 Test message failed:', error);
+            }
+        } catch (error) {
+            console.log('🧪 Manual client test failed:', error);
+        }
+    }
+}, 30000);
+
 // Generate and display QR code
 client.on('qr', (qr: string) => {
     console.log('🔐 QR Code generated! Scan this with WhatsApp:');
@@ -680,6 +714,10 @@ client.on('authenticated', () => {
     console.log(`💾 Authentication data saved to: ${SESSION_PATH}`);
     // Clear QR code since client is now authenticated
     currentQRCode = null;
+    
+    // Check client state after authentication
+    console.log('🔍 Client state after authentication:', client.getState());
+    console.log('🔍 Client info after authentication:', client.info);
 });
 
 client.on('auth_failure', (msg: string) => {

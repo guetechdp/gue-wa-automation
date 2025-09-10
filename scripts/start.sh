@@ -26,4 +26,11 @@ fi
 
 # Always run as root to avoid volume write issues on managed mounts
 echo "👤 Running Node as root to avoid volume permission issues"
+echo "🌍 Environment check:"
+echo "  - NODE_ENV: ${NODE_ENV:-not set}"
+echo "  - PORT: ${PORT:-not set}"
+echo "  - RAILWAY_VOLUME_PATH: ${RAILWAY_VOLUME_PATH:-not set}"
+echo "  - FW_ENDPOINT: ${FW_ENDPOINT:-not set}"
+echo "  - JWT_SECRET: ${JWT_SECRET:+SET}"
+echo "🚀 Starting application..."
 exec dumb-init -- node dist/index.js
