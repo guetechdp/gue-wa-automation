@@ -619,6 +619,10 @@ const client: Client = new Client({
             '--disable-background-timer-throttling',
             '--disable-backgrounding-occluded-windows',
             '--disable-renderer-backgrounding',
+            // Additional args to help with WhatsApp Web loading
+            '--disable-web-security',
+            '--disable-features=VizDisplayCompositor',
+            '--disable-ipc-flooding-protection',
             // Allow LocalAuth to manage the Chromium user data dir for session persistence
         ],
         timeout: 120000,
@@ -666,16 +670,40 @@ setTimeout(async () => {
             console.log('🔄 Still no client.info after long wait');
         }
         
-        // If still no info, try reinitialize
+        // If still no info, try to clear corrupted session and reinitialize
         if (!client.info) {
-            console.log('🔄 Still no client.info after aggressive loading - attempting reinitialize...');
+            console.log('🔄 Still no client.info after aggressive loading - attempting session cleanup...');
             try {
                 await client.destroy();
-                console.log('🔄 Client destroyed, reinitializing...');
+                console.log('🔄 Client destroyed, cleaning up session...');
+                
+                // Clear potentially corrupted session data
+                try {
+                    if (fs.existsSync(SESSION_PATH)) {
+                        const sessionFiles = fs.readdirSync(SESSION_PATH);
+                        console.log('🔄 Found session files to clean:', sessionFiles);
+                        
+                        // Remove session files but keep the directory structure
+                        sessionFiles.forEach(file => {
+                            const filePath = path.join(SESSION_PATH, file);
+                            if (fs.statSync(filePath).isDirectory()) {
+                                fs.rmSync(filePath, { recursive: true, force: true });
+                                console.log(`🔄 Removed session directory: ${file}`);
+                            } else {
+                                fs.unlinkSync(filePath);
+                                console.log(`🔄 Removed session file: ${file}`);
+                            }
+                        });
+                        console.log('🔄 Session cleanup completed');
+                    }
+                } catch (cleanupError) {
+                    console.log('🔄 Error during session cleanup:', cleanupError);
+                }
+                
                 setTimeout(() => {
                     client.initialize();
-                    console.log('🔄 Client reinitialized');
-                }, 2000);
+                    console.log('🔄 Client reinitialized with clean session');
+                }, 3000);
             } catch (error) {
                 console.log('🔄 Error during force reinitialize:', error);
             }
@@ -759,6 +787,21 @@ client.on('authenticated', () => {
     });
     console.log('🔍 Client info after authentication:', client.info);
     
+    // Check if this is a fresh session or existing session
+    try {
+        const sessionFiles = fs.readdirSync(SESSION_PATH);
+        console.log('🔍 Session files after authentication:', sessionFiles);
+        
+        // Check if we have a proper session structure
+        const sessionDir = path.join(SESSION_PATH, 'session');
+        if (fs.existsSync(sessionDir)) {
+            const sessionContents = fs.readdirSync(sessionDir);
+            console.log('🔍 Session directory contents:', sessionContents);
+        }
+    } catch (error) {
+        console.log('🔍 Error checking session files:', error);
+    }
+    
     // Force wait for client to be ready
     setTimeout(async () => {
         console.log('🔄 Checking client readiness after authentication...');
@@ -767,17 +810,19 @@ client.on('authenticated', () => {
             console.log('🔄 Client state after 5s:', state);
             
             if (state === 'CONNECTED' && !myWhatsAppNumber) {
-                console.log('🔄 Client is connected but info not loaded - attempting to force load...');
+                console.log('🔄 Client is connected but info not loaded - checking session integrity...');
                 
-                // Just wait for client.info to populate naturally
-                console.log('🔄 Waiting for client.info to load naturally...');
-                await new Promise(resolve => setTimeout(resolve, 5000));
+                // Check if we need to wait longer for WhatsApp Web to fully load
+                console.log('🔄 Waiting longer for WhatsApp Web to fully load...');
+                await new Promise(resolve => setTimeout(resolve, 10000));
                 
                 if (client.info && (client.info as any).wid) {
                     myWhatsAppNumber = (client.info as any).wid._serialized;
-                    console.log("📞 Bot phone number (loaded after wait):", myWhatsAppNumber);
+                    console.log("📞 Bot phone number (loaded after long wait):", myWhatsAppNumber);
                 } else {
-                    console.log('🔄 Still no client.info after waiting - will try again later');
+                    console.log('🔄 Still no client.info - this might be a session issue');
+                    console.log('🔄 Client info object:', client.info);
+                    console.log('🔄 Client state:', state);
                 }
             }
         } catch (error) {
