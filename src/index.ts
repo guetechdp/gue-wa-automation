@@ -646,6 +646,7 @@ client.on('ready', async () => {
     currentQRCode = null;
 
     // Get the current user's information
+    console.log('🔍 Checking client.info:', client.info);
     if (client.info) {
         myWhatsAppNumber = client.info.wid._serialized; // Format the number for use
         console.log("📞 Bot phone number:", myWhatsAppNumber);
@@ -660,6 +661,17 @@ client.on('ready', async () => {
         } catch (error) {
             console.log(`⚠️ Could not verify session files: ${error}`);
         }
+    } else {
+        console.log('❌ client.info is null or undefined');
+    }
+    
+    // Test if client is working by checking if we can get chats
+    try {
+        console.log('🧪 Testing client functionality...');
+        const chats = await client.getChats();
+        console.log(`🧪 Client test successful - found ${chats.length} chats`);
+    } catch (error) {
+        console.log('🧪 Client test failed:', error);
     }
 });
 
@@ -913,6 +925,7 @@ const sendMessage = async (
 };
 
 // Event listener for incoming messages
+console.log("📨 Registering message event handler...");
 client.on('message', async (message: Message) => {
     console.log("📨 Message triggered from:", message.from);
     console.log("📨 Message body:", message.body);
