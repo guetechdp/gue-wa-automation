@@ -650,53 +650,20 @@ setTimeout(async () => {
         myWhatsAppNumber = client.info.wid._serialized;
         console.log("📞 Bot phone number (manual):", myWhatsAppNumber);
         
-        // Test if client is working
-        try {
-            const chats = await client.getChats();
-            console.log(`🧪 Manual client test successful - found ${chats.length} chats`);
-            
-            // Test if we can send a message to ourselves (this will trigger the message event)
-            console.log('🧪 Testing message event by sending a test message...');
-            try {
-                await client.sendMessage(myWhatsAppNumber, 'Test message to trigger event handler');
-                console.log('🧪 Test message sent successfully');
-            } catch (error) {
-                console.log('🧪 Test message failed:', error);
-            }
-        } catch (error) {
-            console.log('🧪 Manual client test failed:', error);
-        }
+        // Client is ready - no need to test
+        console.log('🧪 Client is ready and phone number is set');
     } else if (state === 'CONNECTED' && !client.info) {
         console.log('⏰ Client is CONNECTED but info is undefined - trying aggressive info loading...');
         
-        // Try multiple approaches to get client info
-        try {
-            // Approach 1: Try to get chats to trigger info loading
-            console.log('🔄 Approach 1: Getting chats to trigger info loading...');
-            const chats = await client.getChats();
-            console.log(`🔄 Got ${chats.length} chats`);
-            
-            // Wait and check again
-            await new Promise(resolve => setTimeout(resolve, 3000));
-            if (client.info && (client.info as any).wid) {
-                myWhatsAppNumber = (client.info as any).wid._serialized;
-                console.log("📞 Bot phone number (loaded via chats):", myWhatsAppNumber);
-            } else {
-                // Approach 2: Try to navigate to a specific page
-                console.log('🔄 Approach 2: Trying to navigate to trigger info loading...');
-                const page = client.pupPage;
-                if (page) {
-                    await page.goto('https://web.whatsapp.com/', { waitUntil: 'networkidle0' });
-                    await new Promise(resolve => setTimeout(resolve, 5000));
-                    
-                    if (client.info && (client.info as any).wid) {
-                        myWhatsAppNumber = (client.info as any).wid._serialized;
-                        console.log("📞 Bot phone number (loaded via navigation):", myWhatsAppNumber);
-                    }
-                }
-            }
-        } catch (error) {
-            console.log('🔄 Error during aggressive info loading:', error);
+        // Just wait for client.info to populate naturally
+        console.log('🔄 Waiting for client.info to load naturally...');
+        await new Promise(resolve => setTimeout(resolve, 10000));
+        
+        if (client.info && (client.info as any).wid) {
+            myWhatsAppNumber = (client.info as any).wid._serialized;
+            console.log("📞 Bot phone number (loaded after long wait):", myWhatsAppNumber);
+        } else {
+            console.log('🔄 Still no client.info after long wait');
         }
         
         // If still no info, try reinitialize
@@ -802,29 +769,15 @@ client.on('authenticated', () => {
             if (state === 'CONNECTED' && !myWhatsAppNumber) {
                 console.log('🔄 Client is connected but info not loaded - attempting to force load...');
                 
-                // Try to force load user info by getting chats first
-                try {
-                    const chats = await client.getChats();
-                    console.log(`🧪 Got ${chats.length} chats, checking client info again...`);
-                    
-                    // Wait a bit more for client.info to populate
-                    await new Promise(resolve => setTimeout(resolve, 2000));
-                    
-                    if (client.info) {
-                        myWhatsAppNumber = client.info.wid._serialized;
-                        console.log("📞 Bot phone number (loaded after chats):", myWhatsAppNumber);
-                    } else {
-                        console.log('🔄 Still no client.info, trying to get it from page...');
-                        
-                        // Wait a bit more and check again
-                        await new Promise(resolve => setTimeout(resolve, 3000));
-                        if (client.info && (client.info as any).wid) {
-                            myWhatsAppNumber = (client.info as any).wid._serialized;
-                            console.log("📞 Bot phone number (loaded after wait):", myWhatsAppNumber);
-                        }
-                    }
-                } catch (error) {
-                    console.log('🧪 Error getting chats to force info load:', error);
+                // Just wait for client.info to populate naturally
+                console.log('🔄 Waiting for client.info to load naturally...');
+                await new Promise(resolve => setTimeout(resolve, 5000));
+                
+                if (client.info && (client.info as any).wid) {
+                    myWhatsAppNumber = (client.info as any).wid._serialized;
+                    console.log("📞 Bot phone number (loaded after wait):", myWhatsAppNumber);
+                } else {
+                    console.log('🔄 Still no client.info after waiting - will try again later');
                 }
             }
         } catch (error) {
