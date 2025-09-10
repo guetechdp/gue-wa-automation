@@ -636,7 +636,13 @@ client.initialize();
 setTimeout(async () => {
     console.log('⏰ 30-second timeout check - checking client state...');
     console.log('⏰ Client info:', client.info);
-    console.log('⏰ Client state:', client.getState());
+    
+    try {
+        const state = await client.getState();
+        console.log('⏰ Client state:', state);
+    } catch (error) {
+        console.log('⏰ Error getting client state:', error);
+    }
     
     if (client.info && !myWhatsAppNumber) {
         console.log('⏰ Client appears ready but ready event didn\'t fire - manually setting up...');
@@ -658,6 +664,21 @@ setTimeout(async () => {
             }
         } catch (error) {
             console.log('🧪 Manual client test failed:', error);
+        }
+    } else {
+        console.log('⏰ Client not ready - info:', client.info, 'myWhatsAppNumber:', myWhatsAppNumber);
+        
+        // If client is still not ready after 30 seconds, try to force reinitialize
+        console.log('🔄 Attempting to force client reinitialize...');
+        try {
+            await client.destroy();
+            console.log('🔄 Client destroyed, reinitializing...');
+            setTimeout(() => {
+                client.initialize();
+                console.log('🔄 Client reinitialized');
+            }, 2000);
+        } catch (error) {
+            console.log('🔄 Error during force reinitialize:', error);
         }
     }
 }, 30000);
@@ -716,8 +737,37 @@ client.on('authenticated', () => {
     currentQRCode = null;
     
     // Check client state after authentication
-    console.log('🔍 Client state after authentication:', client.getState());
+    client.getState().then(state => {
+        console.log('🔍 Client state after authentication:', state);
+    }).catch(err => {
+        console.log('🔍 Error getting client state:', err);
+    });
     console.log('🔍 Client info after authentication:', client.info);
+    
+    // Force wait for client to be ready
+    setTimeout(async () => {
+        console.log('🔄 Checking client readiness after authentication...');
+        try {
+            const state = await client.getState();
+            console.log('🔄 Client state after 5s:', state);
+            
+            if (state === 'CONNECTED' && client.info && !myWhatsAppNumber) {
+                console.log('🔄 Client is connected but ready event didn\'t fire - manually setting up...');
+                myWhatsAppNumber = client.info.wid._serialized;
+                console.log("📞 Bot phone number (manual from authenticated):", myWhatsAppNumber);
+                
+                // Test if we can get chats
+                try {
+                    const chats = await client.getChats();
+                    console.log(`🧪 Client test after auth - found ${chats.length} chats`);
+                } catch (error) {
+                    console.log('🧪 Client test after auth failed:', error);
+                }
+            }
+        } catch (error) {
+            console.log('🔄 Error checking client readiness:', error);
+        }
+    }, 5000);
 });
 
 client.on('auth_failure', (msg: string) => {
