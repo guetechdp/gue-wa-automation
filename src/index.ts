@@ -745,7 +745,7 @@ const sendMessage = async (
         }
         
         // Additional check for client state
-        if (!client.pupPage || !client.pupPage.isClosed) {
+        if (!client.pupPage || client.pupPage.isClosed()) {
             console.error('WhatsApp client page not ready');
             return;
         }

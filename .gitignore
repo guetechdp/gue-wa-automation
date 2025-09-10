@@ -52,4 +52,5 @@ Thumbs.db
 *.env
 
 .wwebjs_auth/
+.wwebjs_cache/
 data/

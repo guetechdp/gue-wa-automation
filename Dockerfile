@@ -25,10 +25,10 @@ WORKDIR /usr/src/app
 # Copy package files
 COPY package*.json ./
 
-# Install all dependencies (including dev dependencies for TypeScript)
+# Install ALL dependencies (including dev dependencies for TypeScript build)
 RUN npm ci
 
-# Copy source code
+# Copy TypeScript configuration and source code
 COPY tsconfig.json ./
 COPY src/ ./src/
 
@@ -84,8 +84,6 @@ RUN mkdir -p /data && \
     chown -R whatsapp-bot:nodejs /usr/src/app && \
     chmod -R 777 /data
 
-# Note: We'll switch to non-root user only if RAILWAY_RUN_UID is not set to 0
-# This allows Railway volumes to work properly with root permissions
 
 # Expose the app port (matches app default PORT=3000)
 EXPOSE 3000
