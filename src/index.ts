@@ -622,10 +622,37 @@ console.log(`🔒 Using LocalAuth strategy for session persistence`);
 
 // Register message event handler BEFORE initializing the client
 console.log("📨 Registering message event handler...");
+
+// Register BOTH message events to catch all messages
+client.on('message', async (message: Message) => {
+    console.log("📨 MESSAGE EVENT triggered from:", message.from);
+    console.log("📨 MESSAGE EVENT body:", message.body);
+    console.log("📨 MESSAGE EVENT production mode:", productionmode);
+    
+    // Check if the sender's number is in the allowed numbers list
+    const senderNumberParts = message.from.split('@');
+    const senderNumber: string = senderNumberParts[0] || ''; // Get the number without the domain
+    
+    console.log("📨 MESSAGE EVENT sender number:", senderNumber);
+    console.log("📨 MESSAGE EVENT allowed numbers:", allowedNumbers);
+    
+    if (productionmode) {
+        console.log("📨 MESSAGE EVENT processing message in production mode");
+        await handleIncomingMessage(senderNumber, message, messagewaitingtime);
+    } else {
+        if (allowedNumbers.includes(senderNumber)) {
+            console.log(`📨 MESSAGE EVENT from ${senderNumber} ignored (whitelisted).`);
+        } else {
+            console.log("📨 MESSAGE EVENT processing message in development mode");
+            await handleIncomingMessage(senderNumber, message, messagewaitingtime);
+        }
+    }
+});
+
 client.on('message_create', async (message: Message) => {
-    console.log("📨 Message triggered from:", message.from);
-    console.log("📨 Message body:", message.body);
-    console.log("📨 Production mode:", productionmode);
+    console.log("📨 MESSAGE_CREATE EVENT triggered from:", message.from);
+    console.log("📨 MESSAGE_CREATE EVENT body:", message.body);
+    console.log("📨 MESSAGE_CREATE EVENT production mode:", productionmode);
     
     // Check if the sender's number is in the allowed numbers list
     const senderNumberParts = message.from.split('@');
@@ -707,6 +734,23 @@ client.once('ready', async () => {
     if (client.info && (client.info as any).wid) {
         myWhatsAppNumber = (client.info as any).wid._serialized; // Format the number for use
         console.log("📞 Bot phone number:", myWhatsAppNumber);
+        
+        // Test if client can actually send messages
+        console.log('🧪 Testing client functionality...');
+        try {
+            const testChat = await client.getChats();
+            console.log(`🧪 Client can get chats: ${testChat.length} chats found`);
+            
+            // Try to get the first chat to test message sending capability
+            if (testChat.length > 0) {
+                const firstChat = testChat[0];
+                if (firstChat) {
+                    console.log(`🧪 First chat: ${firstChat.name || firstChat.id?._serialized || 'Unknown'}`);
+                }
+            }
+        } catch (error) {
+            console.log('🧪 Error testing client functionality:', error);
+        }
         
         // Verify session persistence
         try {
@@ -828,6 +872,11 @@ client.on('reconnecting', () => {
 
 client.on('change_state', (state: string) => {
     console.log('📊 Connection state changed:', state);
+});
+
+// Add debugging for all events
+client.on('*', (eventName: string, ...args: any[]) => {
+    console.log(`🔍 EVENT FIRED: ${eventName}`, args.length > 0 ? args[0] : '');
 });
 
 // Function to send a message
@@ -1054,6 +1103,64 @@ const sendMessage = async (
 
 // Remove the periodic reinitialization - it causes issues with SingletonLock
 // The client should only be initialized once and handle reconnection through events
+
+// Test endpoint to check client functionality
+app.post('/test-client', async (req: Request, res: Response) => {
+    try {
+        console.log('🧪 Testing client functionality via API...');
+        
+        // Check client state
+        const clientState = await client.getState();
+        console.log('🧪 Client state:', clientState);
+        
+        // Check if client can get chats
+        const chats = await client.getChats();
+        console.log('🧪 Number of chats:', chats.length);
+        
+        // Check client info
+        console.log('🧪 Client info:', client.info);
+        
+        return res.json({
+            success: true,
+            clientState,
+            chatCount: chats.length,
+            clientInfo: client.info ? 'Available' : 'Not available',
+            myWhatsAppNumber
+        });
+    } catch (error) {
+        console.error('🧪 Error testing client:', error);
+        return res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+    }
+});
+
+// Test endpoint to manually send a message
+app.post('/test-send', async (req: Request, res: Response) => {
+    try {
+        const { number, message } = req.body;
+        if (!number || !message) {
+            return res.status(400).json({ error: 'Number and message are required' });
+        }
+        
+        console.log('🧪 Testing manual message send...');
+        console.log('🧪 To:', number);
+        console.log('🧪 Message:', message);
+        
+        // Try to send message directly
+        const formattedNumber = `${number}@c.us`;
+        const result = await client.sendMessage(formattedNumber, message);
+        
+        console.log('🧪 Message sent successfully:', result);
+        
+        return res.json({
+            success: true,
+            message: 'Test message sent successfully',
+            result: result.id._serialized
+        });
+    } catch (error) {
+        console.error('🧪 Error sending test message:', error);
+        return res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+    }
+});
 
 // API Route to Call sendMessage
 app.post('/greetings', async (req: Request<{}, {}, GreetingRequest>, res: Response<GreetingResponse | ErrorResponse>) => {
