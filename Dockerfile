@@ -39,7 +39,7 @@ WORKDIR /usr/src/app
 COPY package*.json ./
 
 # Install ALL dependencies (including dev dependencies for TypeScript build)
-RUN npm ci
+RUN npm install
 
 # Copy TypeScript configuration and source code
 COPY tsconfig.json ./
@@ -96,7 +96,7 @@ WORKDIR /usr/src/app
 COPY package*.json ./
 
 # Install only production dependencies
-RUN npm ci --only=production && npm cache clean --force
+RUN npm install --only=production && npm cache clean --force
 
 # Copy built application from builder stage
 COPY --from=builder /usr/src/app/dist ./dist
