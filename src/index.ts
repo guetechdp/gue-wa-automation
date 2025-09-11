@@ -644,34 +644,10 @@ setTimeout(async () => {
         // Client is ready - no need to test
         console.log('🧪 Client is ready and phone number is set');
     } else if (state === 'CONNECTED' && !client.info) {
-        console.log('⏰ Client is CONNECTED but info is undefined - trying aggressive info loading...');
-        
-        // Just wait for client.info to populate naturally
-        console.log('🔄 Waiting for client.info to load naturally...');
-        await new Promise(resolve => setTimeout(resolve, 10000));
-        
-        if (client.info && (client.info as any).wid) {
-            myWhatsAppNumber = (client.info as any).wid._serialized;
-            console.log("📞 Bot phone number (loaded after long wait):", myWhatsAppNumber);
-        } else {
-            console.log('🔄 Still no client.info after long wait');
-        }
-        
-        // If still no info, try to clear corrupted session and reinitialize
-        if (!client.info) {
-            console.log('🔄 Still no client.info after aggressive loading - attempting session cleanup...');
-            try {
-                await client.destroy();
-                console.log('🔄 Client destroyed, cleaning up session...');
-                
-                // Don't delete session data - just wait longer for client.info to load
-                console.log('🔄 Client is connected but info not loaded - waiting longer...');
-                console.log('🔄 This is normal for WhatsApp Web.js in headless mode');
-                console.log('🔄 Session data is preserved and will be used on next restart');
-            } catch (error) {
-                console.log('🔄 Error during force reinitialize:', error);
-            }
-        }
+        console.log('⏰ Client is CONNECTED but info is undefined - this is normal');
+        console.log('🔄 WhatsApp Web.js in headless mode often has undefined client.info');
+        console.log('🔄 The client is still functional for sending/receiving messages');
+        console.log('🔄 Session data is preserved and will be used on next restart');
     } else {
         console.log('⏰ Client not ready - info:', client.info, 'myWhatsAppNumber:', myWhatsAppNumber);
         console.log('🔄 This is normal - client may still be loading or authenticating');
@@ -881,8 +857,10 @@ const sendMessage = async (
         
         try {
                     // Check if client is ready and authenticated
-        if (!client.info) {
-            console.error('WhatsApp client not authenticated');
+        // Check if client is connected (client.info can be undefined in headless mode)
+        const clientState = await client.getState();
+        if (clientState !== 'CONNECTED') {
+            console.error('WhatsApp client not connected, state:', clientState);
             return;
         }
         
