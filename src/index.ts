@@ -609,11 +609,16 @@ if (BROWSER_PATH) {
 }
 
 const client: Client = new Client({
-    // Disable session preservation for now to reduce complexity
-    // authStrategy: new LocalAuth({
-    //     dataPath: SESSION_PATH,
-    //     clientId: resolvedClientId
-    // }),
+    // Enable session preservation for Railway volume persistence
+    authStrategy: new LocalAuth({
+        dataPath: SESSION_PATH,
+        clientId: resolvedClientId
+    }),
+    // Configure cache directory for Railway volume persistence
+    webVersionCache: {
+        type: 'local',
+        path: CACHE_PATH
+    },
     puppeteer: {
         headless: true,
         executablePath: BROWSER_PATH,
@@ -652,6 +657,7 @@ const client: Client = new Client({
 console.log(`🚀 Initializing WhatsApp client with session path: ${SESSION_PATH}`);
 console.log(`🔒 Using LocalAuth strategy for session persistence`);
 console.log(`🔍 Using Chromium path: ${BROWSER_PATH}`);
+console.log(`💾 Session will be preserved in Railway volume: ${RAILWAY_VOLUME_PATH}`);
 
 // Simple message handler following official documentation
 client.on('message', async (message: Message) => {
