@@ -45,7 +45,7 @@ if (fs.existsSync(CHROMIUM_PATH)) {
     }
 }
 
-// Simple WhatsApp client following official documentation
+// Simple WhatsApp client with minimal configuration for Docker
 const client = new Client({
     puppeteer: {
         headless: true,
@@ -54,26 +54,14 @@ const client = new Client({
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--no-first-run',
-            '--no-zygote',
-            '--single-process',
             '--disable-gpu',
-            '--disable-web-security',
-            '--disable-features=VizDisplayCompositor',
-            '--disable-ipc-flooding-protection',
-            '--disable-background-timer-throttling',
-            '--disable-backgrounding-occluded-windows',
-            '--disable-renderer-backgrounding',
-            '--disable-features=TranslateUI',
+            '--no-first-run',
             '--disable-extensions',
-            '--disable-plugins',
             '--disable-default-apps',
             '--disable-sync',
             '--disable-translate',
             '--hide-scrollbars',
             '--mute-audio',
-            '--no-default-browser-check',
             '--disable-background-networking',
             '--disable-features=Translate,BackForwardCache',
             '--disable-hang-monitor',
@@ -82,10 +70,15 @@ const client = new Client({
             '--force-color-profile=srgb',
             '--enable-automation',
             '--password-store=basic',
-            '--use-mock-keychain'
+            '--use-mock-keychain',
+            '--remote-debugging-port=0',
+            '--disable-background-timer-throttling',
+            '--disable-backgrounding-occluded-windows',
+            '--disable-renderer-backgrounding'
         ],
-        timeout: 60000,
-        defaultViewport: null
+        timeout: 0,
+        defaultViewport: null,
+        ignoreDefaultArgs: ['--disable-extensions']
     }
 });
 
@@ -248,24 +241,37 @@ const initializeClient = async (retryCount = 0) => {
     
     try {
         console.log(`🔄 Initializing client (attempt ${retryCount + 1}/${maxRetries + 1})...`);
+        
+        // Destroy existing client if it exists
+        if (retryCount > 0) {
+            try {
+                await client.destroy();
+                console.log('🔄 Previous client destroyed');
+            } catch (e) {
+                console.log('🔄 No previous client to destroy');
+            }
+        }
+        
         await client.initialize();
         console.log('✅ Client initialization started');
     } catch (err) {
         console.error(`❌ Client initialization failed (attempt ${retryCount + 1}):`, err);
         
         if (retryCount < maxRetries) {
-            console.log(`🔄 Retrying in 5 seconds...`);
+            console.log(`🔄 Retrying in 10 seconds...`);
             setTimeout(() => {
                 initializeClient(retryCount + 1);
-            }, 5000);
+            }, 10000);
         } else {
             console.error('❌ Max retries reached. Client initialization failed permanently.');
         }
     }
 };
 
-// Start with Chromium test
-testChromium();
+// Start with Chromium test after a delay
+setTimeout(() => {
+    testChromium();
+}, 2000);
 
 // Add a timeout to detect if client gets stuck
 setTimeout(() => {
