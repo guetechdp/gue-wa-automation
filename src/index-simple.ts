@@ -48,15 +48,62 @@ client.on('ready', () => {
         qrTimeout = null;
         console.log('✅ QR timeout cleared - authentication successful');
     }
+    
+    // Test if we can get client info
+    console.log('🔍 Client info:', client.info);
+    console.log('🔍 Client state:', client.getState());
+    
+    // Test message sending capability
+    setTimeout(async () => {
+        try {
+            const chats = await client.getChats();
+            console.log(`🧪 Found ${chats.length} chats - client is working`);
+            
+            if (chats.length > 0) {
+                const firstChat = chats[0];
+                if (firstChat) {
+                    console.log(`🧪 First chat: ${firstChat.name || firstChat.id._serialized}`);
+                }
+            }
+        } catch (error) {
+            console.log('🧪 Error testing client:', error);
+        }
+    }, 2000);
 });
 
 // Message event - following official documentation exactly
 client.on('message', msg => {
-    console.log('📨 MESSAGE RECEIVED:', msg.from, msg.body);
+    console.log('📨 MESSAGE EVENT TRIGGERED');
+    console.log('📨 From:', msg.from);
+    console.log('📨 Body:', msg.body);
+    console.log('📨 Type:', msg.type);
+    console.log('📨 Timestamp:', msg.timestamp);
+    console.log('📨 Is from me:', msg.fromMe);
     
     if (msg.body == '!ping') {
-        msg.reply('pong');
-        console.log('✅ Replied with pong');
+        console.log('🏓 Ping detected, sending pong...');
+        msg.reply('pong').then(() => {
+            console.log('✅ Pong sent successfully');
+        }).catch(err => {
+            console.error('❌ Error sending pong:', err);
+        });
+    }
+});
+
+// Also listen for message_create event (sometimes needed)
+client.on('message_create', msg => {
+    console.log('📨 MESSAGE_CREATE EVENT TRIGGERED');
+    console.log('📨 From:', msg.from);
+    console.log('📨 Body:', msg.body);
+    console.log('📨 Is from me:', msg.fromMe);
+    
+    if (!msg.fromMe && msg.body == '!ping') {
+        console.log('🏓 Ping detected in message_create, sending pong...');
+        msg.reply('pong').then(() => {
+            console.log('✅ Pong sent successfully via message_create');
+        }).catch(err => {
+            console.error('❌ Error sending pong via message_create:', err);
+        });
     }
 });
 
@@ -73,6 +120,11 @@ client.on('disconnected', (reason) => {
 // Handle loading screen
 client.on('loading_screen', (percent, message) => {
     console.log(`🔄 Loading: ${percent}% - ${message}`);
+});
+
+// Catch all events for debugging
+client.on('*', (eventName, ...args) => {
+    console.log(`🔍 EVENT: ${eventName}`, args.length > 0 ? args : '');
 });
 
 // QR code timeout mechanism
@@ -142,4 +194,47 @@ app.get('/qr-refresh', (req: Request, res: Response) => {
         console.error('❌ Error during logout:', err);
         res.status(500).json({ error: 'Failed to refresh QR' });
     });
+});
+
+// Test message endpoint
+app.post('/test-message', async (req: Request, res: Response) => {
+    const { to, message } = req.body;
+    
+    if (!to || !message) {
+        res.status(400).json({ error: 'Missing to or message' });
+        return;
+    }
+    
+    try {
+        console.log(`🧪 Testing message to ${to}: ${message}`);
+        const result = await client.sendMessage(to, message);
+        console.log('✅ Test message sent:', result.id._serialized);
+        res.status(200).json({ 
+            message: 'Test message sent',
+            messageId: result.id._serialized
+        });
+    } catch (error) {
+        console.error('❌ Error sending test message:', error);
+        res.status(500).json({ error: 'Failed to send message' });
+    }
+});
+
+// Client status endpoint
+app.get('/client-status', async (req: Request, res: Response) => {
+    try {
+        const state = await client.getState();
+        const info = client.info;
+        const chats = await client.getChats();
+        
+        res.status(200).json({
+            state: state,
+            info: info,
+            chatCount: chats.length,
+            isReady: state === 'CONNECTED',
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        console.error('❌ Error getting client status:', error);
+        res.status(500).json({ error: 'Failed to get client status' });
+    }
 });
