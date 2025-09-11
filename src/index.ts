@@ -609,55 +609,14 @@ if (BROWSER_PATH) {
 }
 
 const client: Client = new Client({
-    authStrategy: new LocalAuth({
-        // Persist session inside Railway volume; see docs: https://wwebjs.dev/guide/creating-your-bot/authentication.html#location-path
-        dataPath: SESSION_PATH,
-        clientId: resolvedClientId
-    }),
+    // Disable session preservation for now to reduce complexity
+    // authStrategy: new LocalAuth({
+    //     dataPath: SESSION_PATH,
+    //     clientId: resolvedClientId
+    // }),
     puppeteer: {
         headless: true,
-        ...(BROWSER_PATH && { executablePath: BROWSER_PATH }),
-        // Following WhatsApp Web.js docs for no-gui systems
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu',
-            '--no-first-run',
-            '--disable-default-apps',
-            '--disable-extensions',
-            '--disable-sync',
-            '--disable-translate',
-            '--hide-scrollbars',
-            '--mute-audio',
-            '--disable-background-networking',
-            '--disable-features=Translate,BackForwardCache',
-            '--disable-hang-monitor',
-            '--disable-popup-blocking',
-            '--disable-prompt-on-repost',
-            '--force-color-profile=srgb',
-            '--enable-automation',
-            '--password-store=basic',
-            '--use-mock-keychain',
-            // Additional args to help with message events
-            '--disable-web-security',
-            '--disable-features=VizDisplayCompositor',
-            '--disable-ipc-flooding-protection',
-            // Additional args for better message handling
-            '--disable-background-timer-throttling',
-            '--disable-backgrounding-occluded-windows',
-            '--disable-renderer-backgrounding',
-            '--disable-features=TranslateUI',
-            '--disable-ipc-flooding-protection',
-            '--disable-hang-monitor',
-            '--disable-prompt-on-repost',
-            '--disable-sync',
-            '--disable-translate',
-            '--disable-web-security',
-            '--disable-features=VizDisplayCompositor'
-        ],
-        timeout: 120000,
-        defaultViewport: null
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
     }
 });
 
@@ -665,46 +624,22 @@ console.log(`🚀 Initializing WhatsApp client with session path: ${SESSION_PATH
 console.log(`🔒 Using LocalAuth strategy for session persistence`);
 console.log(`🔍 Using Chromium path: ${BROWSER_PATH}`);
 
-// Register message event handler BEFORE initializing the client
-console.log("📨 Registering message event handler...");
-
-// Try different event names to catch messages
+// Simple message handler following official documentation
 client.on('message', async (message: Message) => {
-    console.log("📨 MESSAGE EVENT triggered from:", message.from);
-    console.log("📨 MESSAGE EVENT body:", message.body);
-    console.log("📨 MESSAGE EVENT production mode:", productionmode);
+    console.log("📨 MESSAGE RECEIVED from:", message.from);
+    console.log("📨 MESSAGE BODY:", message.body);
     
-    // Check if the sender's number is in the allowed numbers list
-    const senderNumberParts = message.from.split('@');
-    const senderNumber: string = senderNumberParts[0] || ''; // Get the number without the domain
-    
-    console.log("📨 MESSAGE EVENT sender number:", senderNumber);
-    console.log("📨 MESSAGE EVENT allowed numbers:", allowedNumbers);
-    
-    if (productionmode) {
-        console.log("📨 MESSAGE EVENT processing message in production mode");
-        await handleIncomingMessage(senderNumber, message, messagewaitingtime);
-    } else {
-        if (allowedNumbers.includes(senderNumber)) {
-            console.log(`📨 MESSAGE EVENT from ${senderNumber} ignored (whitelisted).`);
-        } else {
-            console.log("📨 MESSAGE EVENT processing message in development mode");
-            await handleIncomingMessage(senderNumber, message, messagewaitingtime);
-        }
+    // Simple test - just reply to any message
+    if (message.body === '!ping') {
+        message.reply('pong');
+        console.log("📨 Replied with pong");
     }
-});
-
-client.on('message_create', async (message: Message) => {
-    console.log("📨 MESSAGE_CREATE EVENT triggered from:", message.from);
-    console.log("📨 MESSAGE_CREATE EVENT body:", message.body);
-    console.log("📨 MESSAGE_CREATE EVENT production mode:", productionmode);
     
     // Check if the sender's number is in the allowed numbers list
     const senderNumberParts = message.from.split('@');
-    const senderNumber: string = senderNumberParts[0] || ''; // Get the number without the domain
+    const senderNumber: string = senderNumberParts[0] || '';
     
     console.log("📨 Sender number:", senderNumber);
-    console.log("📨 Allowed numbers:", allowedNumbers);
     
     if (productionmode) {
         console.log("📨 Processing message in production mode");
@@ -763,74 +698,8 @@ client.on('qr', (qr: string) => {
     currentQRCode = qr; // Store QR code in global variable
 });
 
-client.once('ready', async () => {
-    console.log('✅ WhatsApp client is ready!');
-    console.log('🤖 Bot is now active and listening for messages');
-    console.log(`💾 Session data persisted at: ${SESSION_PATH}`);
-
-    // Clear QR code since client is now authenticated
-    currentQRCode = null;
-
-    // Wait a moment for client.info to be fully populated (following WhatsApp Web.js docs pattern)
-    await new Promise(resolve => setTimeout(resolve, 3000));
-
-    // Get the current user's information
-    console.log('🔍 Checking client.info after delay:', client.info);
-    if (client.info && (client.info as any).wid) {
-        myWhatsAppNumber = (client.info as any).wid._serialized; // Format the number for use
-        console.log("📞 Bot phone number:", myWhatsAppNumber);
-        
-        // Test if client can actually send messages
-        console.log('🧪 Testing client functionality...');
-        try {
-            const testChat = await client.getChats();
-            console.log(`🧪 Client can get chats: ${testChat.length} chats found`);
-            
-            // Try to get the first chat to test message sending capability
-            if (testChat.length > 0) {
-                const firstChat = testChat[0];
-                if (firstChat) {
-                    console.log(`🧪 First chat: ${firstChat.name || firstChat.id?._serialized || 'Unknown'}`);
-                }
-            }
-            
-            // Test if we can get the current user's info
-            console.log('🧪 Testing client.info access...');
-            console.log('🧪 client.info:', client.info);
-            console.log('🧪 client.info type:', typeof client.info);
-            
-            // Test if we can get the current user's number
-            if (client.info) {
-                console.log('🧪 client.info.wid:', (client.info as any).wid);
-                console.log('🧪 client.info.wid._serialized:', (client.info as any).wid?._serialized);
-            }
-            
-        } catch (error) {
-            console.log('🧪 Error testing client functionality:', error);
-        }
-        
-        // Verify session persistence
-        try {
-            const sessionFiles = fs.readdirSync(SESSION_PATH);
-            console.log(`✅ Session files found: ${sessionFiles.length} files`);
-            sessionFiles.forEach(file => {
-                console.log(`   📄 ${file}`);
-            });
-        } catch (error) {
-            console.log(`⚠️ Could not verify session files: ${error}`);
-        }
-    } else {
-        console.log('❌ client.info is null or undefined');
-    }
-    
-    // Test if client is working by checking if we can get chats
-    try {
-        console.log('🧪 Testing client functionality...');
-        const chats = await client.getChats();
-        console.log(`🧪 Client test successful - found ${chats.length} chats`);
-    } catch (error) {
-        console.log('🧪 Client test failed:', error);
-    }
+client.once('ready', () => {
+    console.log('✅ Client is ready!');
 });
 
 client.on('authenticated', () => {
