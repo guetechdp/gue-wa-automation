@@ -44,4 +44,4 @@ echo "  - RAILWAY_VOLUME_PATH: ${RAILWAY_VOLUME_PATH:-not set}"
 echo "  - FW_ENDPOINT: ${FW_ENDPOINT:-not set}"
 echo "  - JWT_SECRET: ${JWT_SECRET:+SET}"
 echo "🚀 Starting application..."
-exec dumb-init -- node dist/index-simple.js
+exec dumb-init -- node dist/index.js

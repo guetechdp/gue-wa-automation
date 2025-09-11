@@ -616,7 +616,36 @@ const client: Client = new Client({
     // }),
     puppeteer: {
         headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
+        executablePath: BROWSER_PATH,
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--no-first-run',
+            '--disable-extensions',
+            '--disable-default-apps',
+            '--disable-sync',
+            '--disable-translate',
+            '--hide-scrollbars',
+            '--mute-audio',
+            '--disable-background-networking',
+            '--disable-features=Translate,BackForwardCache',
+            '--disable-hang-monitor',
+            '--disable-popup-blocking',
+            '--disable-prompt-on-repost',
+            '--force-color-profile=srgb',
+            '--enable-automation',
+            '--password-store=basic',
+            '--use-mock-keychain',
+            '--remote-debugging-port=0',
+            '--disable-background-timer-throttling',
+            '--disable-backgrounding-occluded-windows',
+            '--disable-renderer-backgrounding'
+        ],
+        timeout: 0,
+        defaultViewport: null,
+        ignoreDefaultArgs: ['--disable-extensions']
     }
 });
 
@@ -805,25 +834,6 @@ client.on('*', (eventName: string, ...args: any[]) => {
     console.log(`🔍 EVENT FIRED: ${eventName}`, args.length > 0 ? args[0] : '');
 });
 
-// Try to register a simple message handler to test
-client.on('message', (message: Message) => {
-    console.log('🔍 SIMPLE MESSAGE HANDLER:', message.from, message.body);
-});
-
-// Also try message_create
-client.on('message_create', (message: Message) => {
-    console.log('🔍 SIMPLE MESSAGE_CREATE HANDLER:', message.from, message.body);
-});
-
-// Try to register a simple message handler to test
-client.on('message', (message: Message) => {
-    console.log('🔍 SIMPLE MESSAGE HANDLER 2:', message.from, message.body);
-});
-
-// Also try message_create
-client.on('message_create', (message: Message) => {
-    console.log('🔍 SIMPLE MESSAGE_CREATE HANDLER 2:', message.from, message.body);
-});
 
 // Function to send a message
 const sendMessage = async (
@@ -1292,7 +1302,7 @@ app.get('/test', (req: Request, res: Response) => {
 });
 
 // Start Express server
-const PORT: number = Number(env.PORT) || 3000;
+const PORT: number = Number(env.PORT) || 8080;
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
