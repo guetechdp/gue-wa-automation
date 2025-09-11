@@ -67,9 +67,11 @@ const client = new Client({
 client.on('qr', (qr) => {
     console.log('🔄 QR Code received/refreshed');
     console.log('QR Code:', qr);
+    currentQR = qr; // Store current QR code
     qrcode.generate(qr, { small: true });
     console.log('📱 Open WhatsApp on your phone and scan the QR code above');
-    console.log('⏰ QR code expires in 60 seconds - scan quickly!');
+    console.log('⏰ QR code expires in 120 seconds - you have time to scan!');
+    console.log('💡 If QR expires, it will automatically refresh');
     
     // Set up timeout for QR code refresh
     setupQRTimeout();
@@ -80,12 +82,13 @@ client.on('ready', () => {
     console.log('✅ Client is ready!');
     console.log('🤖 Bot is now active and listening for messages');
     
-    // Clear QR timeout since we're now authenticated
+    // Clear QR timeout and QR code since we're now authenticated
     if (qrTimeout) {
         clearTimeout(qrTimeout);
         qrTimeout = null;
         console.log('✅ QR timeout cleared - authentication successful');
     }
+    currentQR = null; // Clear stored QR code
     
     // Test if we can get client info
     console.log('🔍 Client info:', client.info);
@@ -167,6 +170,7 @@ client.on('*', (eventName, ...args) => {
 
 // QR code timeout mechanism
 let qrTimeout: NodeJS.Timeout | null = null;
+let currentQR: string | null = null;
 
 // Initialize client
 console.log('🔄 Initializing WhatsApp client...');
@@ -206,18 +210,18 @@ setTimeout(() => {
     });
 }, 30000);
 
-// Set up QR code timeout (refresh every 60 seconds if not scanned)
+// Set up QR code timeout (refresh every 120 seconds if not scanned)
 const setupQRTimeout = () => {
     if (qrTimeout) clearTimeout(qrTimeout);
     qrTimeout = setTimeout(() => {
-        console.log('⏰ QR code timeout - refreshing...');
+        console.log('⏰ QR code timeout after 120 seconds - refreshing...');
         client.logout().then(() => {
             console.log('🔄 Logged out due to timeout, generating new QR');
             client.initialize();
         }).catch(err => {
             console.error('❌ Error during timeout logout:', err);
         });
-    }, 60000); // 60 seconds
+    }, 120000); // 120 seconds - longer timeout
 };
 
 // Simple Express server
@@ -256,16 +260,43 @@ app.get('/test', (req: Request, res: Response) => {
     });
 });
 
+// Get current QR code endpoint
+app.get('/qr', (req: Request, res: Response) => {
+    if (currentQR) {
+        res.status(200).json({ 
+            qr: currentQR,
+            message: 'Current QR code',
+            expiresIn: '120 seconds'
+        });
+    } else {
+        res.status(404).json({ 
+            message: 'No QR code available',
+            suggestion: 'Try /qr-refresh to generate a new QR code'
+        });
+    }
+});
+
 // QR refresh endpoint
 app.get('/qr-refresh', (req: Request, res: Response) => {
     console.log('🔄 Manual QR refresh requested');
-    client.logout().then(() => {
-        console.log('🔄 Logged out, will generate new QR code');
+    
+    // Clear existing timeout
+    if (qrTimeout) {
+        clearTimeout(qrTimeout);
+        qrTimeout = null;
+    }
+    
+    // Try to destroy and reinitialize client
+    client.destroy().then(() => {
+        console.log('🔄 Client destroyed, reinitializing...');
         client.initialize();
         res.status(200).json({ message: 'QR refresh initiated' });
     }).catch(err => {
-        console.error('❌ Error during logout:', err);
-        res.status(500).json({ error: 'Failed to refresh QR' });
+        console.error('❌ Error during client destroy:', err);
+        // Fallback: just reinitialize
+        console.log('🔄 Fallback: reinitializing without destroy');
+        client.initialize();
+        res.status(200).json({ message: 'QR refresh initiated (fallback)' });
     });
 });
 
