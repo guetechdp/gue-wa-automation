@@ -25,24 +25,38 @@ const client = new Client({
     }
 });
 
-// QR Code event
+// QR Code event - handles both initial and refresh
 client.on('qr', (qr) => {
-    console.log('QR RECEIVED', qr);
+    console.log('🔄 QR Code received/refreshed');
+    console.log('QR Code:', qr);
     qrcode.generate(qr, { small: true });
+    console.log('📱 Open WhatsApp on your phone and scan the QR code above');
+    console.log('⏰ QR code expires in 60 seconds - scan quickly!');
+    
+    // Set up timeout for QR code refresh
+    setupQRTimeout();
 });
 
 // Ready event
 client.on('ready', () => {
-    console.log('Client is ready!');
+    console.log('✅ Client is ready!');
+    console.log('🤖 Bot is now active and listening for messages');
+    
+    // Clear QR timeout since we're now authenticated
+    if (qrTimeout) {
+        clearTimeout(qrTimeout);
+        qrTimeout = null;
+        console.log('✅ QR timeout cleared - authentication successful');
+    }
 });
 
 // Message event - following official documentation exactly
 client.on('message', msg => {
-    console.log('MESSAGE RECEIVED:', msg.from, msg.body);
+    console.log('📨 MESSAGE RECEIVED:', msg.from, msg.body);
     
     if (msg.body == '!ping') {
         msg.reply('pong');
-        console.log('Replied with pong');
+        console.log('✅ Replied with pong');
     }
 });
 
@@ -53,11 +67,34 @@ client.on('auth_failure', msg => {
 
 client.on('disconnected', (reason) => {
     console.log('❌ Client was logged out:', reason);
+    console.log('🔄 Attempting to reconnect...');
 });
+
+// Handle loading screen
+client.on('loading_screen', (percent, message) => {
+    console.log(`🔄 Loading: ${percent}% - ${message}`);
+});
+
+// QR code timeout mechanism
+let qrTimeout: NodeJS.Timeout | null = null;
 
 // Initialize client
 console.log('🔄 Initializing WhatsApp client...');
 client.initialize();
+
+// Set up QR code timeout (refresh every 60 seconds if not scanned)
+const setupQRTimeout = () => {
+    if (qrTimeout) clearTimeout(qrTimeout);
+    qrTimeout = setTimeout(() => {
+        console.log('⏰ QR code timeout - refreshing...');
+        client.logout().then(() => {
+            console.log('🔄 Logged out due to timeout, generating new QR');
+            client.initialize();
+        }).catch(err => {
+            console.error('❌ Error during timeout logout:', err);
+        });
+    }, 60000); // 60 seconds
+};
 
 // Simple Express server
 const PORT = process.env.PORT || 8080;
@@ -91,5 +128,18 @@ app.get('/test', (req: Request, res: Response) => {
         clientState: 'checking...',
         chromiumPath: CHROMIUM_PATH,
         environment: process.env.NODE_ENV || 'development'
+    });
+});
+
+// QR refresh endpoint
+app.get('/qr-refresh', (req: Request, res: Response) => {
+    console.log('🔄 Manual QR refresh requested');
+    client.logout().then(() => {
+        console.log('🔄 Logged out, will generate new QR code');
+        client.initialize();
+        res.status(200).json({ message: 'QR refresh initiated' });
+    }).catch(err => {
+        console.error('❌ Error during logout:', err);
+        res.status(500).json({ error: 'Failed to refresh QR' });
     });
 });
