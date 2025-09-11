@@ -21,14 +21,7 @@ RUN apk add --no-cache \
     libxcomposite \
     libxdamage \
     libxrandr \
-    mesa-gbm \
-    libxss \
-    alsa-lib \
-    libx11 \
-    libxext \
-    libxrender \
-    libxtst \
-    libxi
+    mesa-gbm
 
 # Set environment variables for Puppeteer
 ENV PUPPETEER_SKIP_DOWNLOAD=true
@@ -76,14 +69,7 @@ RUN apk add --no-cache \
     libxcomposite \
     libxdamage \
     libxrandr \
-    mesa-gbm \
-    libxss \
-    alsa-lib \
-    libx11 \
-    libxext \
-    libxrender \
-    libxtst \
-    libxi
+    mesa-gbm
 
 # Create app user for security
 RUN addgroup -g 1001 -S nodejs && \
