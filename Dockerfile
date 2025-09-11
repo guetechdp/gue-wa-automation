@@ -13,11 +13,29 @@ RUN apk add --no-cache \
     freetype-dev \
     harfbuzz \
     ca-certificates \
-    ttf-freefont
+    ttf-freefont \
+    xvfb \
+    dbus \
+    at-spi2-atk \
+    atk \
+    cairo-gobject \
+    gtk+3.0 \
+    libdrm \
+    libxcomposite \
+    libxdamage \
+    libxrandr \
+    mesa-gbm \
+    libxss \
+    libasound2
 
 # Set environment variables for Puppeteer
 ENV PUPPETEER_SKIP_DOWNLOAD=true
 ENV CHROMIUM_PATH=/usr/bin/chromium-browser
+
+# Verify Chromium installation in builder stage
+RUN chromium-browser --version && \
+    echo "✅ Chromium installed successfully in builder" && \
+    ls -la /usr/bin/chromium*
 
 # Set working directory
 WORKDIR /usr/src/app
@@ -48,7 +66,20 @@ RUN apk add --no-cache \
     ca-certificates \
     ttf-freefont \
     dumb-init \
-    su-exec
+    su-exec \
+    xvfb \
+    dbus \
+    at-spi2-atk \
+    atk \
+    cairo-gobject \
+    gtk+3.0 \
+    libdrm \
+    libxcomposite \
+    libxdamage \
+    libxrandr \
+    mesa-gbm \
+    libxss \
+    libasound2
 
 # Create app user for security
 RUN addgroup -g 1001 -S nodejs && \
@@ -58,6 +89,11 @@ RUN addgroup -g 1001 -S nodejs && \
 ENV PUPPETEER_SKIP_DOWNLOAD=true
 ENV CHROMIUM_PATH=/usr/bin/chromium-browser
 ENV NODE_ENV=production
+
+# Verify Chromium installation
+RUN chromium-browser --version && \
+    echo "✅ Chromium installed successfully" && \
+    ls -la /usr/bin/chromium*
 
 # Set Railway-specific environment variables
 ENV RAILWAY_VOLUME_PATH=/data

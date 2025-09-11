@@ -6,6 +6,17 @@
 set -e
 echo "🚀 Starting WhatsApp Bot..."
 
+# Verify Chromium installation
+echo "🔍 Checking Chromium installation..."
+if command -v chromium-browser >/dev/null 2>&1; then
+    echo "✅ Chromium found at: $(which chromium-browser)"
+    chromium-browser --version || echo "⚠️ Chromium version check failed"
+else
+    echo "❌ Chromium not found in PATH"
+    echo "🔍 Available browsers:"
+    ls -la /usr/bin/chromium* 2>/dev/null || echo "No chromium binaries found"
+fi
+
 VOLUME_PATH="${RAILWAY_VOLUME_PATH:-/data}"
 SESSION_DIR="$VOLUME_PATH/.wwebjs_auth/session"
 

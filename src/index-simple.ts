@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express';
 import { Client, Message } from 'whatsapp-web.js';
 import * as qrcode from 'qrcode-terminal';
 import * as dotenv from 'dotenv';
+import * as fs from 'fs';
 
 // Load environment variables
 dotenv.config();
@@ -16,12 +17,49 @@ console.log('🚀 Starting WhatsApp Bot...');
 console.log('🔍 Chromium path:', CHROMIUM_PATH);
 console.log('🌍 Environment:', process.env.NODE_ENV || 'development');
 
+// Verify Chromium exists
+if (fs.existsSync(CHROMIUM_PATH)) {
+    console.log('✅ Chromium executable found');
+} else {
+    console.log('❌ Chromium executable NOT found at:', CHROMIUM_PATH);
+    console.log('🔍 Trying alternative paths...');
+    
+    const alternativePaths = [
+        '/usr/bin/chromium',
+        '/usr/bin/chromium-browser',
+        '/usr/bin/google-chrome',
+        '/usr/bin/google-chrome-stable'
+    ];
+    
+    let foundPath = null;
+    for (const path of alternativePaths) {
+        if (fs.existsSync(path)) {
+            foundPath = path;
+            console.log('✅ Found Chromium at:', path);
+            break;
+        }
+    }
+    
+    if (!foundPath) {
+        console.log('❌ No Chromium executable found in any common location');
+    }
+}
+
 // Simple WhatsApp client following official documentation
 const client = new Client({
     puppeteer: {
         headless: true,
         executablePath: CHROMIUM_PATH,
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--no-first-run',
+            '--no-zygote',
+            '--single-process',
+            '--disable-gpu'
+        ]
     }
 });
 
@@ -132,7 +170,41 @@ let qrTimeout: NodeJS.Timeout | null = null;
 
 // Initialize client
 console.log('🔄 Initializing WhatsApp client...');
-client.initialize();
+console.log('🔍 Chromium executable path:', CHROMIUM_PATH);
+console.log('🔍 Puppeteer args:', [
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-dev-shm-usage',
+    '--disable-accelerated-2d-canvas',
+    '--no-first-run',
+    '--no-zygote',
+    '--single-process',
+    '--disable-gpu'
+]);
+
+client.initialize().then(() => {
+    console.log('✅ Client initialization started');
+}).catch(err => {
+    console.error('❌ Client initialization failed:', err);
+});
+
+// Add a timeout to detect if client gets stuck
+setTimeout(() => {
+    console.log('⏰ 30 seconds passed - checking client state...');
+    client.getState().then(state => {
+        console.log('🔍 Current client state:', state);
+        if (state !== 'CONNECTED') {
+            console.log('⚠️ Client not connected after 30 seconds');
+            console.log('🔄 Attempting to restart client...');
+            client.destroy().then(() => {
+                console.log('🔄 Client destroyed, reinitializing...');
+                client.initialize();
+            });
+        }
+    }).catch(err => {
+        console.error('❌ Error checking client state:', err);
+    });
+}, 30000);
 
 // Set up QR code timeout (refresh every 60 seconds if not scanned)
 const setupQRTimeout = () => {
@@ -179,6 +251,7 @@ app.get('/test', (req: Request, res: Response) => {
         message: 'Test endpoint',
         clientState: 'checking...',
         chromiumPath: CHROMIUM_PATH,
+        chromiumExists: fs.existsSync(CHROMIUM_PATH),
         environment: process.env.NODE_ENV || 'development'
     });
 });
