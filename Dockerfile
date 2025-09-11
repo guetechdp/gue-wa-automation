@@ -16,9 +16,6 @@ RUN apk add --no-cache \
     ttf-freefont \
     xvfb \
     dbus \
-    at-spi2-atk \
-    atk \
-    cairo-gobject \
     gtk+3.0 \
     libdrm \
     libxcomposite \
@@ -26,7 +23,12 @@ RUN apk add --no-cache \
     libxrandr \
     mesa-gbm \
     libxss \
-    libasound2
+    alsa-lib \
+    libx11 \
+    libxext \
+    libxrender \
+    libxtst \
+    libxi
 
 # Set environment variables for Puppeteer
 ENV PUPPETEER_SKIP_DOWNLOAD=true
@@ -69,9 +71,6 @@ RUN apk add --no-cache \
     su-exec \
     xvfb \
     dbus \
-    at-spi2-atk \
-    atk \
-    cairo-gobject \
     gtk+3.0 \
     libdrm \
     libxcomposite \
@@ -79,7 +78,12 @@ RUN apk add --no-cache \
     libxrandr \
     mesa-gbm \
     libxss \
-    libasound2
+    alsa-lib \
+    libx11 \
+    libxext \
+    libxrender \
+    libxtst \
+    libxi
 
 # Create app user for security
 RUN addgroup -g 1001 -S nodejs && \
