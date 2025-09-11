@@ -58,8 +58,34 @@ const client = new Client({
             '--no-first-run',
             '--no-zygote',
             '--single-process',
-            '--disable-gpu'
-        ]
+            '--disable-gpu',
+            '--disable-web-security',
+            '--disable-features=VizDisplayCompositor',
+            '--disable-ipc-flooding-protection',
+            '--disable-background-timer-throttling',
+            '--disable-backgrounding-occluded-windows',
+            '--disable-renderer-backgrounding',
+            '--disable-features=TranslateUI',
+            '--disable-extensions',
+            '--disable-plugins',
+            '--disable-default-apps',
+            '--disable-sync',
+            '--disable-translate',
+            '--hide-scrollbars',
+            '--mute-audio',
+            '--no-default-browser-check',
+            '--disable-background-networking',
+            '--disable-features=Translate,BackForwardCache',
+            '--disable-hang-monitor',
+            '--disable-popup-blocking',
+            '--disable-prompt-on-repost',
+            '--force-color-profile=srgb',
+            '--enable-automation',
+            '--password-store=basic',
+            '--use-mock-keychain'
+        ],
+        timeout: 60000,
+        defaultViewport: null
     }
 });
 
@@ -186,11 +212,60 @@ console.log('🔍 Puppeteer args:', [
     '--disable-gpu'
 ]);
 
-client.initialize().then(() => {
-    console.log('✅ Client initialization started');
-}).catch(err => {
-    console.error('❌ Client initialization failed:', err);
-});
+// Test Chromium launch first
+const testChromium = async () => {
+    try {
+        console.log('🧪 Testing Chromium launch...');
+        const { spawn } = require('child_process');
+        
+        const chromium = spawn(CHROMIUM_PATH, [
+            '--version',
+            '--no-sandbox',
+            '--disable-setuid-sandbox'
+        ]);
+        
+        chromium.on('close', (code: number) => {
+            if (code === 0) {
+                console.log('✅ Chromium test successful');
+                initializeClient();
+            } else {
+                console.error('❌ Chromium test failed with code:', code);
+            }
+        });
+        
+        chromium.on('error', (err: Error) => {
+            console.error('❌ Chromium test error:', err);
+        });
+        
+    } catch (err) {
+        console.error('❌ Chromium test failed:', err);
+    }
+};
+
+// Initialize client with retry logic
+const initializeClient = async (retryCount = 0) => {
+    const maxRetries = 3;
+    
+    try {
+        console.log(`🔄 Initializing client (attempt ${retryCount + 1}/${maxRetries + 1})...`);
+        await client.initialize();
+        console.log('✅ Client initialization started');
+    } catch (err) {
+        console.error(`❌ Client initialization failed (attempt ${retryCount + 1}):`, err);
+        
+        if (retryCount < maxRetries) {
+            console.log(`🔄 Retrying in 5 seconds...`);
+            setTimeout(() => {
+                initializeClient(retryCount + 1);
+            }, 5000);
+        } else {
+            console.error('❌ Max retries reached. Client initialization failed permanently.');
+        }
+    }
+};
+
+// Start with Chromium test
+testChromium();
 
 // Add a timeout to detect if client gets stuck
 setTimeout(() => {
