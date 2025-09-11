@@ -620,6 +620,33 @@ const client: Client = new Client({
 console.log(`🚀 Initializing WhatsApp client with session path: ${SESSION_PATH}`);
 console.log(`🔒 Using LocalAuth strategy for session persistence`);
 
+// Register message event handler BEFORE initializing the client
+console.log("📨 Registering message event handler...");
+client.on('message_create', async (message: Message) => {
+    console.log("📨 Message triggered from:", message.from);
+    console.log("📨 Message body:", message.body);
+    console.log("📨 Production mode:", productionmode);
+    
+    // Check if the sender's number is in the allowed numbers list
+    const senderNumberParts = message.from.split('@');
+    const senderNumber: string = senderNumberParts[0] || ''; // Get the number without the domain
+    
+    console.log("📨 Sender number:", senderNumber);
+    console.log("📨 Allowed numbers:", allowedNumbers);
+    
+    if (productionmode) {
+        console.log("📨 Processing message in production mode");
+        await handleIncomingMessage(senderNumber, message, messagewaitingtime);
+    } else {
+        if (allowedNumbers.includes(senderNumber)) {
+            console.log(`📨 Message from ${senderNumber} ignored (whitelisted).`);
+        } else {
+            console.log("📨 Processing message in development mode");
+            await handleIncomingMessage(senderNumber, message, messagewaitingtime);
+        }
+    }
+});
+
 // Initialize the client (following the docs pattern)
 client.initialize();
 
@@ -1023,32 +1050,7 @@ const sendMessage = async (
     }
 };
 
-// Event listener for incoming messages
-console.log("📨 Registering message event handler...");
-client.on('message_create', async (message: Message) => {
-    console.log("📨 Message triggered from:", message.from);
-    console.log("📨 Message body:", message.body);
-    console.log("📨 Production mode:", productionmode);
-    
-    // Check if the sender's number is in the allowed numbers list
-    const senderNumberParts = message.from.split('@');
-    const senderNumber: string = senderNumberParts[0] || ''; // Get the number without the domain
-    
-    console.log("📨 Sender number:", senderNumber);
-    console.log("📨 Allowed numbers:", allowedNumbers);
-    
-    if (productionmode) {
-        console.log("📨 Processing message in production mode");
-        await handleIncomingMessage(senderNumber, message, messagewaitingtime);
-    } else {
-        if (allowedNumbers.includes(senderNumber)) {
-            console.log(`📨 Message from ${senderNumber} ignored (whitelisted).`);
-        } else {
-            console.log("📨 Processing message in development mode");
-            await handleIncomingMessage(senderNumber, message, messagewaitingtime);
-        }
-    }
-});
+// Message event handler is now registered before client initialization above
 
 // Remove the periodic reinitialization - it causes issues with SingletonLock
 // The client should only be initialized once and handle reconnection through events
