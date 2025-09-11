@@ -48,14 +48,16 @@ RUN apk add --no-cache \
     ca-certificates \
     ttf-freefont \
     dumb-init \
-    su-exec
+    su-exec \
+    xvfb \
+    dbus
 
 # Create app user for security
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S whatsapp-bot -u 1001
 
 # Set environment variables for Puppeteer
-ENV PUPPETEER_SKIP_DOWNLOAD=true
+ENV PUPPETEER_SKIP_DOWNLOAD=false
 ENV CHROMIUM_PATH=/usr/bin/chromium-browser
 ENV NODE_ENV=production
 

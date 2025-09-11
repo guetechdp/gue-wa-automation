@@ -159,8 +159,36 @@ db.loadDatabase({}, () => {
 
 const messagewaitingtime: number = 10000;
 
-// Ensure Puppeteer Path is Correct
-const BROWSER_PATH: string | undefined = env.CHROMIUM_PATH || (process.platform === 'darwin' ? '/opt/homebrew/bin/chromium' : '/usr/bin/chromium');
+// Ensure Puppeteer Path is Correct - try multiple paths
+const BROWSER_PATH: string | undefined = env.CHROMIUM_PATH || (() => {
+    if (process.platform === 'darwin') {
+        return '/opt/homebrew/bin/chromium';
+    } else {
+        // Try multiple Chromium paths in order of preference
+        const possiblePaths = [
+            '/usr/bin/chromium-browser',
+            '/usr/bin/chromium',
+            '/usr/bin/google-chrome',
+            '/usr/bin/google-chrome-stable',
+            '/opt/google/chrome/chrome'
+        ];
+        
+        // Check which path exists
+        for (const path of possiblePaths) {
+            try {
+                if (fs.existsSync(path)) {
+                    console.log(`🔍 Found Chromium at: ${path}`);
+                    return path;
+                }
+            } catch (error) {
+                // Continue to next path
+            }
+        }
+        
+        console.log('⚠️ No Chromium found in standard paths, using default');
+        return '/usr/bin/chromium-browser';
+    }
+})();
 
 const configfw: FWConfig = {
     question: "",
@@ -610,7 +638,23 @@ const client: Client = new Client({
             '--force-color-profile=srgb',
             '--enable-automation',
             '--password-store=basic',
-            '--use-mock-keychain'
+            '--use-mock-keychain',
+            // Additional args to help with message events
+            '--disable-web-security',
+            '--disable-features=VizDisplayCompositor',
+            '--disable-ipc-flooding-protection',
+            // Additional args for better message handling
+            '--disable-background-timer-throttling',
+            '--disable-backgrounding-occluded-windows',
+            '--disable-renderer-backgrounding',
+            '--disable-features=TranslateUI',
+            '--disable-ipc-flooding-protection',
+            '--disable-hang-monitor',
+            '--disable-prompt-on-repost',
+            '--disable-sync',
+            '--disable-translate',
+            '--disable-web-security',
+            '--disable-features=VizDisplayCompositor'
         ],
         timeout: 120000,
         defaultViewport: null
@@ -619,11 +663,12 @@ const client: Client = new Client({
 
 console.log(`🚀 Initializing WhatsApp client with session path: ${SESSION_PATH}`);
 console.log(`🔒 Using LocalAuth strategy for session persistence`);
+console.log(`🔍 Using Chromium path: ${BROWSER_PATH}`);
 
 // Register message event handler BEFORE initializing the client
 console.log("📨 Registering message event handler...");
 
-// Register BOTH message events to catch all messages
+// Try different event names to catch messages
 client.on('message', async (message: Message) => {
     console.log("📨 MESSAGE EVENT triggered from:", message.from);
     console.log("📨 MESSAGE EVENT body:", message.body);
@@ -748,6 +793,18 @@ client.once('ready', async () => {
                     console.log(`🧪 First chat: ${firstChat.name || firstChat.id?._serialized || 'Unknown'}`);
                 }
             }
+            
+            // Test if we can get the current user's info
+            console.log('🧪 Testing client.info access...');
+            console.log('🧪 client.info:', client.info);
+            console.log('🧪 client.info type:', typeof client.info);
+            
+            // Test if we can get the current user's number
+            if (client.info) {
+                console.log('🧪 client.info.wid:', (client.info as any).wid);
+                console.log('🧪 client.info.wid._serialized:', (client.info as any).wid?._serialized);
+            }
+            
         } catch (error) {
             console.log('🧪 Error testing client functionality:', error);
         }
@@ -877,6 +934,26 @@ client.on('change_state', (state: string) => {
 // Add debugging for all events
 client.on('*', (eventName: string, ...args: any[]) => {
     console.log(`🔍 EVENT FIRED: ${eventName}`, args.length > 0 ? args[0] : '');
+});
+
+// Try to register a simple message handler to test
+client.on('message', (message: Message) => {
+    console.log('🔍 SIMPLE MESSAGE HANDLER:', message.from, message.body);
+});
+
+// Also try message_create
+client.on('message_create', (message: Message) => {
+    console.log('🔍 SIMPLE MESSAGE_CREATE HANDLER:', message.from, message.body);
+});
+
+// Try to register a simple message handler to test
+client.on('message', (message: Message) => {
+    console.log('🔍 SIMPLE MESSAGE HANDLER 2:', message.from, message.body);
+});
+
+// Also try message_create
+client.on('message_create', (message: Message) => {
+    console.log('🔍 SIMPLE MESSAGE_CREATE HANDLER 2:', message.from, message.body);
 });
 
 // Function to send a message
@@ -1145,6 +1222,10 @@ app.post('/test-send', async (req: Request, res: Response) => {
         console.log('🧪 To:', number);
         console.log('🧪 Message:', message);
         
+        // Check client state first
+        const clientState = await client.getState();
+        console.log('🧪 Client state before send:', clientState);
+        
         // Try to send message directly
         const formattedNumber = `${number}@c.us`;
         const result = await client.sendMessage(formattedNumber, message);
@@ -1158,6 +1239,45 @@ app.post('/test-send', async (req: Request, res: Response) => {
         });
     } catch (error) {
         console.error('🧪 Error sending test message:', error);
+        return res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+    }
+});
+
+// Test endpoint to check if events are working
+app.post('/test-events', async (req: Request, res: Response) => {
+    try {
+        console.log('🧪 Testing event system...');
+        
+        // Check if client is ready
+        const clientState = await client.getState();
+        console.log('🧪 Client state:', clientState);
+        
+        // Check if client can get chats
+        const chats = await client.getChats();
+        console.log('🧪 Number of chats:', chats.length);
+        
+        // Check if client can get the current user
+        console.log('🧪 Client info:', client.info);
+        
+        // Check if we can get the current user's number
+        if (client.info) {
+            console.log('🧪 Client info wid:', (client.info as any).wid);
+            console.log('🧪 Client info wid serialized:', (client.info as any).wid?._serialized);
+        }
+        
+        // Check Chromium path
+        console.log('🧪 Chromium path:', BROWSER_PATH);
+        
+        return res.json({
+            success: true,
+            clientState,
+            chatCount: chats.length,
+            clientInfo: client.info ? 'Available' : 'Not available',
+            myWhatsAppNumber,
+            chromiumPath: BROWSER_PATH
+        });
+    } catch (error) {
+        console.error('🧪 Error testing events:', error);
         return res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
     }
 });
