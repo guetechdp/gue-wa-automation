@@ -12,6 +12,7 @@ export interface Environment {
   JWT_SECRET?: string;
   AI_AGENT?: string;
   PORT?: string;
+  MONGODB_URI?: string;
 }
 
 // AI Agent response interface
@@ -95,5 +96,6 @@ export interface ExpressApp {
   use: (middleware: any) => void;
   post: (path: string, handler: (req: any, res: any) => void) => void;
   get: (path: string, handler: (req: any, res: any) => void) => void;
+  delete: (path: string, handler: (req: any, res: any) => void) => void;
   listen: (port: number, callback: () => void) => void;
 } 

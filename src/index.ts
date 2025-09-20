@@ -1,13 +1,14 @@
 import express, { Request, Response } from 'express';
-import { Client, LocalAuth, NoAuth, Message, Chat, MessageMedia } from 'whatsapp-web.js';
+import { Client, Message, Chat, MessageMedia } from 'whatsapp-web.js';
 import * as qrcode from 'qrcode-terminal';
 import Loki from 'lokijs';
 import axios from 'axios';
 import * as dotenv from 'dotenv';
 import * as fs from 'fs';
-import * as path from 'path';
 import { execSync } from 'child_process';
 import * as jwt from 'jsonwebtoken';
+import mongoose from 'mongoose';
+import { WhatsAppClientManager, ClientInfo } from './client-manager';
 
 import {
   Environment,
@@ -38,94 +39,19 @@ const processingUsers: ProcessingState = {};
 // Global variable to store QR code
 let currentQRCode: string | null = null;
 
-// Ensure Railway Persistent Storage is used
-const RAILWAY_VOLUME_PATH = process.env.RAILWAY_VOLUME_PATH || "/data";
-const SESSION_PATH = process.env.NODE_ENV === 'production'
-  ? path.join(RAILWAY_VOLUME_PATH, '.wwebjs_auth')
-  : './.wwebjs_auth';
-
-// Cache directory for WhatsApp Web HTML files (separate from session data)
-const CACHE_PATH = process.env.NODE_ENV === 'production'
-  ? path.join(RAILWAY_VOLUME_PATH, '.wwebjs_cache')
-  : './.wwebjs_cache';
+// MongoDB RemoteAuth - no persistent file storage needed
 const clientIdProd = 'whatsapp-bot-railway';
 const clientIdDev = 'whatsapp-bot-dev';
 const resolvedClientId = process.env.NODE_ENV === 'production' ? clientIdProd : clientIdDev;
-const legacyLockFile = path.join(SESSION_PATH, 'session', 'SingletonLock');
-const clientLockFile = path.join(SESSION_PATH, `session-${resolvedClientId}`, 'SingletonLock');
 
-// Enhanced session directory management for Railway persistence
-const ensureSessionDirectory = () => {
-    try {
-        // For Railway, we need to handle permissions more carefully
-        if (process.env.NODE_ENV === 'production') {
-            console.log(`💾 Railway production mode - using persistent volume at: ${SESSION_PATH}`);
-            console.log(`📝 Sessions will be preserved across restarts!`);
-            
-            // Let WhatsApp Web.js handle directory creation to avoid permission issues
-            console.log(`🔒 Session will be managed by WhatsApp Web.js`);
-            
-        } else {
-            // Development mode - create directories normally
-            if (!fs.existsSync(SESSION_PATH)) {
-                fs.mkdirSync(SESSION_PATH, { recursive: true });
-                console.log(`📁 Created session directory: ${SESSION_PATH}`);
-            }
-            
-            const sessionDir = path.join(SESSION_PATH, 'session');
-            if (!fs.existsSync(sessionDir)) {
-                fs.mkdirSync(sessionDir, { recursive: true });
-                console.log(`📁 Created session subdirectory: ${sessionDir}`);
-            }
-        }
-        
-        console.log(`💾 Session persistence configured at: ${SESSION_PATH}`);
-        console.log(`📁 Cache directory configured at: ${CACHE_PATH}`);
-        console.log(`🔒 Lock file locations: ${legacyLockFile} and ${clientLockFile}`);
-        
-        // Check if session data exists (only if directory exists)
-        if (fs.existsSync(SESSION_PATH)) {
-            try {
-                const sessionFiles = fs.readdirSync(SESSION_PATH);
-                if (sessionFiles.length > 0) {
-                    console.log(`✅ Found existing session data: ${sessionFiles.join(', ')}`);
-                } else {
-                    console.log(`📝 No existing session data found - will create new session`);
-                }
-            } catch (error) {
-                console.log(`⚠️ Could not read session directory: ${error}`);
-            }
-        } else {
-            console.log(`📝 Session directory will be created by WhatsApp Web.js`);
-        }
-        
-    } catch (error) {
-        console.error("❌ Error setting up session directory:", error);
-        console.log("📝 Continuing with WhatsApp Web.js default behavior");
-    }
-};
 
-// Initialize session directory
-ensureSessionDirectory();
 
 try {
     // Check if Chromium is already running
     const isRunning = execSync("pgrep -x chromium || pgrep -x chromium-browser || echo 0")
         .toString().trim() !== "0";
 
-    // Remove any stale SingletonLock files (legacy and client-specific)
-    const lockFilesToCheck = [legacyLockFile, clientLockFile];
-    for (const lf of lockFilesToCheck) {
-        try {
-            if (!isRunning && fs.existsSync(lf)) {
-                console.log(`🔓 Removing existing SingletonLock file: ${lf}`);
-                fs.unlinkSync(lf);
-                console.log("✅ SingletonLock removed successfully");
-            }
-        } catch (e) {
-            console.log(`⚠️ Could not remove lock file ${lf}: ${e}`);
-        }
-    }
+    // MongoDB RemoteAuth handles session management - no lock files to manage
 } catch (error) {
     console.error("❌ Error checking Chromium process:", error);
 }
@@ -134,6 +60,8 @@ const productionmode: boolean = env.NODE_ENV === 'production';
 console.log(`🌍 Environment: NODE_ENV=${env.NODE_ENV}, Production mode: ${productionmode}`);
 console.log(`🌍 FW_ENDPOINT: ${env.FW_ENDPOINT}`);
 console.log(`🌍 JWT_SECRET: ${env.JWT_SECRET ? 'SET' : 'NOT SET'}`);
+
+// Client manager will be initialized after BROWSER_PATH is defined
 
 const app: ExpressApp = express();
 // Express Middleware
@@ -190,6 +118,48 @@ const BROWSER_PATH: string | undefined = env.CHROMIUM_PATH || (() => {
     }
 })();
 
+// Validate MongoDB URI is provided
+if (!env.MONGODB_URI) {
+    console.error('❌ MONGODB_URI environment variable is required');
+    process.exit(1);
+}
+
+// Initialize WhatsApp Client Manager
+const clientManager = new WhatsAppClientManager({
+    chromiumPath: BROWSER_PATH || '/usr/bin/chromium-browser',
+    mongoUri: env.MONGODB_URI,
+    backupSyncIntervalMs: 300000, // 5 minutes backup interval
+    maxRetries: 5, // Maximum retry attempts for client initialization
+    retryDelayMs: 2000, // Base delay between retries (exponential backoff)
+    healthCheckIntervalMs: 30000, // Health check every 30 seconds
+    puppeteerArgs: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--no-first-run',
+        '--disable-extensions',
+        '--disable-default-apps',
+        '--disable-sync',
+        '--disable-translate',
+        '--hide-scrollbars',
+        '--mute-audio',
+        '--disable-background-networking',
+        '--disable-features=Translate,BackForwardCache',
+        '--disable-hang-monitor',
+        '--disable-popup-blocking',
+        '--disable-prompt-on-repost',
+        '--force-color-profile=srgb',
+        '--enable-automation',
+        '--password-store=basic',
+        '--use-mock-keychain',
+        '--remote-debugging-port=0',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding'
+    ]
+});
+
 const configfw: FWConfig = {
     question: "",
     overrideConfig: {}
@@ -215,6 +185,11 @@ async function callInferenceFw(messages: string, session?: string, phoneNumber?:
         if (!url.startsWith('http://') && !url.startsWith('https://')) {
             url = 'https://' + url;
         }
+        console.log('🤖 Using AI endpoint URL:', url);
+        console.log('🤖 Environment variables:', {
+            FW_ENDPOINT: env.FW_ENDPOINT || 'NOT SET',
+            JWT_SECRET: env.JWT_SECRET ? 'SET' : 'NOT SET'
+        });
         const jwtSecret = env.JWT_SECRET || 'your-jwt-secret-key';
         
         // Generate JWT token dynamically
@@ -268,6 +243,9 @@ async function callInferenceFw(messages: string, session?: string, phoneNumber?:
             }
         });
 
+        console.log('🤖 AI API Response Status:', response.status);
+        console.log('🤖 AI API Response Data:', JSON.stringify(response.data, null, 2));
+
         const rsp = response.data;
         const jsonData: AIAgentResponse = {
             text: rsp.text || 'Mohon maaf, saat ini saya belum bisa menjawab pertanyaanmu',
@@ -276,12 +254,21 @@ async function callInferenceFw(messages: string, session?: string, phoneNumber?:
         
         // Ensure we always have a valid text response
         if (!jsonData.text || jsonData.text.trim() === '') {
+            console.error('❌ AI response has empty or invalid text:', jsonData);
             jsonData.text = 'Mohon maaf, saat ini saya belum bisa menjawab pertanyaanmu';
         }
         
         return jsonData;
     } catch (error) {
-        console.error('Error during inference:', error);
+        console.error('❌ Error during AI inference:', error);
+        if (axios.isAxiosError(error)) {
+            console.error('❌ Axios Error Details:');
+            console.error('  - Status:', error.response?.status);
+            console.error('  - Status Text:', error.response?.statusText);
+            console.error('  - Response Data:', error.response?.data);
+            console.error('  - Request URL:', error.config?.url);
+            console.error('  - Request Headers:', error.config?.headers);
+        }
         return {
             text: 'Mohon maaf, saat ini saya belum bisa menjawab pertanyaanmu',
             session: null
@@ -303,7 +290,7 @@ async function fetchMessagesAfterTimestamp(messages: Message[], timestamp: numbe
 }
 
 // Improved function to handle message queuing and deduplication
-async function handleIncomingMessage(sender: string, message: Message, delay: number = 10000): Promise<void> {
+async function handleIncomingMessage(clientId: string, sender: string, message: Message, delay: number = 10000): Promise<void> {
     console.log(`🔄 handleIncomingMessage called for ${sender} with delay ${delay}ms`);
     const senderNumber: string = sender;
     
@@ -316,15 +303,15 @@ async function handleIncomingMessage(sender: string, message: Message, delay: nu
     }
     
     // Initialize message processing state for this user
-    if (!messageQueue[senderNumber]) {
-        messageQueue[senderNumber] = [];
-    }
+        if (!messageQueue[senderNumber]) {
+            messageQueue[senderNumber] = [];
+        }
     
     // Add current message to queue
-    messageQueue[senderNumber].push({
-        message,
-        timestamp: Date.now()
-    });
+        messageQueue[senderNumber].push({
+            message,
+            timestamp: Date.now()
+        });
     
     // Prepare chat for pre-reply actions
     let preReplyChat: Chat | null = null;
@@ -353,7 +340,7 @@ async function handleIncomingMessage(sender: string, message: Message, delay: nu
                 if (combinedUserMessages && combinedUserMessages.trim()) {
                     console.log(`🔄 FINAL PROCESSING: ${queuedMessages.length} messages from ${senderNumber} after timer expired`);
                     console.log(`📝 Combined messages: "${combinedUserMessages}"`);
-                    await sendMessage(senderNumber, combinedUserMessages, null, false, null);
+                    await sendMessage(clientId, senderNumber, combinedUserMessages, null, false, null);
                 } else {
                     console.log(`No valid messages to process for ${senderNumber}`);
                 }
@@ -421,7 +408,7 @@ async function handleIncomingMessage(sender: string, message: Message, delay: nu
         const newTimer = setTimeout(async () => {
             console.log(`⏰ Timer expired for ${senderNumber}, processing queued messages...`);
             await processQueuedMessages();
-        }, delay);
+    }, delay);
         
         (processingUsers as any)[`${senderNumber}_timer`] = newTimer;
         console.log(`⏰ New timer set for ${senderNumber} (${delay}ms)`);
@@ -448,39 +435,6 @@ async function handleIncomingMessage(sender: string, message: Message, delay: nu
     console.log(`⏰ Initial timer set for ${senderNumber} (${delay}ms)`);
 }
 
-// Function to fetch the last 10 messages after the latest reply and reply after a delay
-async function replyToNewMessages(sender: string, message: Message, delay: number = 10000): Promise<void> {
-    const chatId: string = message.from;
-    let rmessage: string = message.body;
-    let rcontext: ChatMessage[] | null = null;
-    
-    // Get the current chat
-    const chat: Chat = await message.getChat();
-    
-    // Wait for the specified delay before replying
-    setTimeout(async () => {
-        const c_limit = 10;
-        const messageswait: Message[] = await chat.fetchMessages({ limit: c_limit });
-        if (messageswait.length > 0) {
-            const lastMessage = messageswait[messageswait.length - 1];
-            if (lastMessage && message.id._serialized === lastMessage.id._serialized) {
-                const myMessages = messageswait.filter(message => message.from === myWhatsAppNumber);
-                if (myMessages.length > 0) {
-                    const latestMessage = myMessages[myMessages.length - 1]; // Get the latest message sent by you
-                    if (latestMessage) {
-                        const usermessages = await fetchMessagesAfterTimestamp(messageswait, latestMessage.timestamp);
-                        if (usermessages) {
-                            rmessage = usermessages;
-                        }
-                    }
-                } else {
-                    console.log('No messages found from me.');
-                }
-                await sendMessage(sender, rmessage, rcontext, false, null);
-            }
-        } 
-    }, delay);
-}
 
 // Function to get the 5 messages before the last reply and structure them
 async function getPreviousMessages(messages: Message[], timestamp: number): Promise<ChatMessage[] | null> {
@@ -597,72 +551,19 @@ function convertLLMToWhatsApp(content: string, preserveStructure: boolean = true
             reduction: originalLength - formattedContent.length
         });
         return formattedContent;
-    } catch (error) {
+        } catch (error) {
         console.log('⚠️ Error in WhatsApp formatting, sending original content', error);
         return content;
     }
 }
 
-// Only set executablePath if BROWSER_PATH is defined
-if (BROWSER_PATH) {
-    // We'll set this in the client configuration below
-}
+// All clients are created via API - no default client
 
-const client: Client = new Client({
-    // Enable session preservation for Railway volume persistence
-    authStrategy: new LocalAuth({
-        dataPath: SESSION_PATH,
-        clientId: resolvedClientId
-    }),
-    // Configure cache directory for Railway volume persistence
-    webVersionCache: {
-        type: 'local',
-        path: CACHE_PATH
-    },
-    puppeteer: {
-        headless: true,
-        executablePath: BROWSER_PATH,
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu',
-            '--no-first-run',
-            '--disable-extensions',
-            '--disable-default-apps',
-            '--disable-sync',
-            '--disable-translate',
-            '--hide-scrollbars',
-            '--mute-audio',
-            '--disable-background-networking',
-            '--disable-features=Translate,BackForwardCache',
-            '--disable-hang-monitor',
-            '--disable-popup-blocking',
-            '--disable-prompt-on-repost',
-            '--force-color-profile=srgb',
-            '--enable-automation',
-            '--password-store=basic',
-            '--use-mock-keychain',
-            '--remote-debugging-port=0',
-            '--disable-background-timer-throttling',
-            '--disable-backgrounding-occluded-windows',
-            '--disable-renderer-backgrounding'
-        ],
-        timeout: 0,
-        defaultViewport: null,
-        ignoreDefaultArgs: ['--disable-extensions']
-    }
-});
-
-console.log(`🚀 Initializing WhatsApp client with session path: ${SESSION_PATH}`);
-console.log(`🔒 Using LocalAuth strategy for session persistence`);
-console.log(`🔍 Using Chromium path: ${BROWSER_PATH}`);
-console.log(`💾 Session will be preserved in Railway volume: ${RAILWAY_VOLUME_PATH}`);
-
-// Simple message handler following official documentation
-client.on('message', async (message: Message) => {
-    console.log("📨 MESSAGE RECEIVED from:", message.from);
+// Message handler function for any client
+async function handleIncomingMessageFromClient(clientId: string, message: Message): Promise<void> {
+    console.log(`📨 MESSAGE RECEIVED from client ${clientId}:`, message.from);
     console.log("📨 MESSAGE BODY:", message.body);
+    console.log("📨 MESSAGE TIMESTAMP:", new Date().toISOString());
     
     // Simple test - just reply to any message
     if (message.body === '!ping') {
@@ -676,173 +577,61 @@ client.on('message', async (message: Message) => {
     
     console.log("📨 Sender number:", senderNumber);
     
+    console.log("📨 Production mode:", productionmode);
+    console.log("📨 Allowed numbers:", allowedNumbers);
+    console.log("📨 Sender number:", senderNumber);
+    
     if (productionmode) {
         console.log("📨 Processing message in production mode");
-        await handleIncomingMessage(senderNumber, message, messagewaitingtime);
+        await handleIncomingMessage(clientId, senderNumber, message, messagewaitingtime);
     } else {
         if (allowedNumbers.includes(senderNumber)) {
             console.log(`📨 Message from ${senderNumber} ignored (whitelisted).`);
         } else {
             console.log("📨 Processing message in development mode");
-            await handleIncomingMessage(senderNumber, message, messagewaitingtime);
+            await handleIncomingMessage(clientId, senderNumber, message, messagewaitingtime);
         }
     }
-});
+}
 
-// Initialize the client (following the docs pattern)
-client.initialize();
+console.log(`🚀 Initializing WhatsApp client with MongoDB RemoteAuth`);
+console.log(`🔍 Using Chromium path: ${BROWSER_PATH}`);
 
-// Add a timeout to check if client is ready after 30 seconds
-setTimeout(async () => {
-    console.log('⏰ 30-second timeout check - checking client state...');
-    console.log('⏰ Client info:', client.info);
-    
-    let state: string | null = null;
+// Message handling is now managed by the client manager
+
+// Initialize the client manager (MongoDB connection) only
+async function initializeApp() {
     try {
-        state = await client.getState();
-        console.log('⏰ Client state:', state);
+        // Initialize MongoDB connection
+        console.log('🔗 Initializing MongoDB connection...');
+        await clientManager.initialize();
+        console.log('✅ MongoDB connection established');
+        
+        // Register message handler
+        clientManager.addMessageHandler(handleIncomingMessageFromClient);
+        console.log('✅ Message handler registered');
+        
+        // Restore existing sessions from MongoDB
+        await clientManager.restoreExistingSessions();
+        
+        console.log('🚀 WhatsApp Bot API ready - existing sessions restored, new clients can be created via API endpoints');
     } catch (error) {
-        console.log('⏰ Error getting client state:', error);
+        console.error('❌ Failed to initialize app:', error);
+        process.exit(1);
     }
-    
-    if (client.info && !myWhatsAppNumber) {
-        console.log('⏰ Client appears ready but ready event didn\'t fire - manually setting up...');
-        myWhatsAppNumber = client.info.wid._serialized;
-        console.log("📞 Bot phone number (manual):", myWhatsAppNumber);
-        
-        // Client is ready - no need to test
-        console.log('🧪 Client is ready and phone number is set');
-    } else if (state === 'CONNECTED' && !client.info) {
-        console.log('⏰ Client is CONNECTED but info is undefined - this is normal');
-        console.log('🔄 WhatsApp Web.js in headless mode often has undefined client.info');
-        console.log('🔄 The client is still functional for sending/receiving messages');
-        console.log('🔄 Session data is preserved and will be used on next restart');
-    } else {
-        console.log('⏰ Client not ready - info:', client.info, 'myWhatsAppNumber:', myWhatsAppNumber);
-        console.log('🔄 This is normal - client may still be loading or authenticating');
-        console.log('🔄 No action needed - session will be preserved');
-    }
-}, 30000);
+}
 
-// Generate and display QR code
-client.on('qr', (qr: string) => {
-    console.log('🔐 QR Code generated! Scan this with WhatsApp:');
-    // Generate and print the QR code in the terminal
-    qrcode.generate(qr, { small: true });
-    console.log('📱 Open WhatsApp on your phone and scan the QR code above');
-    currentQRCode = qr; // Store QR code in global variable
-});
+// Start the application
+initializeApp();
 
-client.once('ready', () => {
-    console.log('✅ Client is ready!');
-});
+// No automatic client creation - all clients created via API
 
-client.on('authenticated', () => {
-    console.log('✅ Successfully authenticated with WhatsApp!');
-    console.log(`💾 Authentication data saved to: ${SESSION_PATH}`);
-    console.log('🔄 Session will be preserved across restarts');
-    // Clear QR code since client is now authenticated
-    currentQRCode = null;
-    
-    // Check client state after authentication
-    client.getState().then(state => {
-        console.log('🔍 Client state after authentication:', state);
-    }).catch(err => {
-        console.log('🔍 Error getting client state:', err);
-    });
-    console.log('🔍 Client info after authentication:', client.info);
-    
-    // Verify session data is properly saved
-    try {
-        const sessionFiles = fs.readdirSync(SESSION_PATH);
-        console.log('🔍 Session files after authentication:', sessionFiles);
-        
-        // Check if we have a proper session structure
-        const sessionDir = path.join(SESSION_PATH, 'session');
-        const clientSessionDir = path.join(SESSION_PATH, `session-${resolvedClientId}`);
-        
-        if (fs.existsSync(sessionDir)) {
-            const sessionContents = fs.readdirSync(sessionDir);
-            console.log('✅ Legacy session directory found with:', sessionContents.length, 'files');
-        }
-        
-        if (fs.existsSync(clientSessionDir)) {
-            const clientSessionContents = fs.readdirSync(clientSessionDir);
-            console.log('✅ Client session directory found with:', clientSessionContents.length, 'files');
-        }
-        
-        if (sessionFiles.length > 0) {
-            console.log('✅ Session data successfully saved and will persist across restarts');
-        } else {
-            console.log('⚠️ No session files found - this might be a fresh authentication');
-        }
-    } catch (error) {
-        console.log('🔍 Error checking session files:', error);
-    }
-    
-    // Force wait for client to be ready
-    setTimeout(async () => {
-        console.log('🔄 Checking client readiness after authentication...');
-        try {
-            const state = await client.getState();
-            console.log('🔄 Client state after 5s:', state);
-            
-            if (state === 'CONNECTED' && !myWhatsAppNumber) {
-                console.log('🔄 Client is connected but info not loaded - checking session integrity...');
-                
-                // Check if we need to wait longer for WhatsApp Web to fully load
-                console.log('🔄 Waiting longer for WhatsApp Web to fully load...');
-                await new Promise(resolve => setTimeout(resolve, 10000));
-                
-                if (client.info && (client.info as any).wid) {
-                    myWhatsAppNumber = (client.info as any).wid._serialized;
-                    console.log("📞 Bot phone number (loaded after long wait):", myWhatsAppNumber);
-                } else {
-                    console.log('🔄 Still no client.info - this might be a session issue');
-                    console.log('🔄 Client info object:', client.info);
-                    console.log('🔄 Client state:', state);
-                    console.log('🔄 This is a known issue with WhatsApp Web.js in headless mode');
-                    console.log('🔄 The client may still work for sending/receiving messages');
-                }
-            }
-        } catch (error) {
-            console.log('🔄 Error checking client readiness:', error);
-        }
-    }, 5000);
-});
-
-client.on('auth_failure', (msg: string) => {
-    console.error('❌ Authentication failed:', msg);
-    console.log('🔄 Retrying authentication...');
-});
-
-client.on('loading_screen', (percent: string, message: string) => {
-    console.log(`📱 Loading WhatsApp Web: ${percent}% - ${message}`);
-});
-
-client.on('disconnected', (reason: string) => {
-    console.log('❌ Client disconnected:', reason);
-    console.log('🔄 Attempting to reconnect...');
-    // Don't auto-reinitialize to avoid conflicts
-    console.log('Please restart the application manually if needed');
-});
-
-client.on('reconnecting', () => {
-    console.log('🔄 Reconnecting to WhatsApp...');
-});
-
-client.on('change_state', (state: string) => {
-    console.log('📊 Connection state changed:', state);
-});
-
-// Add debugging for all events
-client.on('*', (eventName: string, ...args: any[]) => {
-    console.log(`🔍 EVENT FIRED: ${eventName}`, args.length > 0 ? args[0] : '');
-});
+// Event handling is now managed by the client manager
 
 
-// Function to send a message
+// Function to send a message via a specific client
 const sendMessage = async (
+    clientId: string,
     number: string, 
     message: string, 
     contexts: ChatMessage[] | null, 
@@ -862,7 +651,7 @@ const sendMessage = async (
         const formattedNumber = `${number}@c.us`;
         
         if (initial) {
-            const response = await client.sendMessage(formattedNumber, message);
+            const response = await clientManager.sendMessage(clientId, formattedNumber, message);
             console.log('Message sent successfully:');
             return;
         } 
@@ -874,9 +663,12 @@ const sendMessage = async (
         // Get user contact information
         let userName: string = 'WhatsApp User';
         try {
-            const contact = await client.getContactById(formattedNumber);
+            const client = clientManager.getClient(clientId);
+            if (client) {
+                const contact = await client.client.getContactById(formattedNumber);
             if (contact && contact.pushname) {
                 userName = contact.pushname;
+                }
             }
         } catch (error) {
             console.log('Could not get contact info, using default name');
@@ -884,6 +676,13 @@ const sendMessage = async (
 
         let aiagent: AIAgentResponse;
         console.log(`🤖 Calling AI API with message: "${message}"`);
+        console.log(`🤖 AI API Parameters:`, {
+            message,
+            session: session || 'none',
+            phoneNumber: number,
+            userName,
+            clientId
+        });
         aiagent = await callInferenceFw(message, session || undefined, number, userName);
         console.log(`🤖 AI Response received:`, aiagent);
         
@@ -895,15 +694,21 @@ const sendMessage = async (
         
         try {
                     // Check if client is ready and authenticated
-        // Check if client is connected (client.info can be undefined in headless mode)
-        const clientState = await client.getState();
+        const client = clientManager.getClient(clientId);
+        if (!client) {
+            console.error('WhatsApp client not found:', clientId);
+            return;
+        }
+        
+        // Check if client is connected
+        const clientState = await client.client.getState();
         if (clientState !== 'CONNECTED') {
             console.error('WhatsApp client not connected, state:', clientState);
             return;
         }
         
         // Additional check for client state
-        if (!client.pupPage || client.pupPage.isClosed()) {
+        if (!client.client.pupPage || client.client.pupPage.isClosed()) {
             console.error('WhatsApp client page not ready');
             return;
         }
@@ -982,7 +787,7 @@ const sendMessage = async (
                 const part = outgoingParts[i];
                 if (!part) continue;
                 try {
-                    const chat = await client.getChatById(formattedNumber);
+                    const chat = await client.client.getChatById(formattedNumber);
                     await chat.sendStateTyping();
                 } catch {}
 
@@ -992,31 +797,31 @@ const sendMessage = async (
                         const media = await MessageMedia.fromUrl(mediaUrl, { unsafeMime: true });
                         try {
                             if (part.caption) {
-                                await client.sendMessage(formattedNumber, media, { caption: part.caption });
-                            } else {
-                                await client.sendMessage(formattedNumber, media);
+                                await client.client.sendMessage(formattedNumber, media, { caption: part.caption });
+                    } else {
+                                await client.client.sendMessage(formattedNumber, media);
                             }
                             console.log(`🖼️ Sent media from ${mediaUrl}`);
                         } catch (sendErr: any) {
                             const errorMessage = (sendErr?.message || '').toString();
-                            if (errorMessage.includes('serialize')) {
+                    if (errorMessage.includes('serialize')) {
                                 console.log('✅ Media likely sent successfully (WhatsApp Web.js internal error)');
                                 // Do not send URL fallback to avoid duplicates
-                            } else {
+                    } else {
                                 console.log('⚠️ WhatsApp Web.js error sending media:', errorMessage);
                                 // Fallback: send URL as text only for real failures
-                                await client.sendMessage(formattedNumber, part.value);
+                                await client.client.sendMessage(formattedNumber, part.value);
                             }
                         }
                     } catch (mediaErr: any) {
                         console.log(`⚠️ Failed to fetch media ${String(part.value)}:`, mediaErr?.message || mediaErr);
                         // Fallback: send URL as text if fetching media fails
-                        await client.sendMessage(formattedNumber, part.value);
+                        await client.client.sendMessage(formattedNumber, part.value);
                     }
                 } else {
                     // text
                     try {
-                        await client.sendMessage(formattedNumber, part.value);
+                        await client.client.sendMessage(formattedNumber, part.value);
                         console.log(`✅ Sent text part`);
                     } catch (textErr: any) {
                         const errorMessage = textErr?.message || 'Unknown error';
@@ -1033,7 +838,7 @@ const sendMessage = async (
                     const delayMs = 1000 + Math.floor(Math.random() * 2000);
                     console.log(`⏳ Waiting ${delayMs}ms before next part`);
                     try {
-                        const chat = await client.getChatById(formattedNumber);
+                        const chat = await client.client.getChatById(formattedNumber);
                         await chat.sendStateTyping();
                     } catch {}
                     await new Promise(resolve => setTimeout(resolve, delayMs));
@@ -1071,23 +876,38 @@ app.post('/test-client', async (req: Request, res: Response) => {
     try {
         console.log('🧪 Testing client functionality via API...');
         
-        // Check client state
-        const clientState = await client.getState();
+        const clients = clientManager.getAllClients();
+        if (clients.length === 0) {
+            return res.json({
+                success: true,
+                message: 'No clients available - create clients via API first',
+                clientCount: 0
+            });
+        }
+        
+        // Test the first available client
+        const firstClient = clients[0];
+        if (!firstClient) {
+            return res.status(400).json({ error: 'No valid client found' });
+        }
+        
+        const clientState = await firstClient.client.getState();
         console.log('🧪 Client state:', clientState);
         
         // Check if client can get chats
-        const chats = await client.getChats();
+        const chats = await firstClient.client.getChats();
         console.log('🧪 Number of chats:', chats.length);
         
         // Check client info
-        console.log('🧪 Client info:', client.info);
+        console.log('🧪 Client info:', firstClient.client.info);
         
         return res.json({
             success: true,
+            clientId: firstClient.clientId,
             clientState,
             chatCount: chats.length,
-            clientInfo: client.info ? 'Available' : 'Not available',
-            myWhatsAppNumber
+            clientInfo: firstClient.client.info ? 'Available' : 'Not available',
+            totalClients: clients.length
         });
     } catch (error) {
         console.error('🧪 Error testing client:', error);
@@ -1107,13 +927,23 @@ app.post('/test-send', async (req: Request, res: Response) => {
         console.log('🧪 To:', number);
         console.log('🧪 Message:', message);
         
-        // Check client state first
-        const clientState = await client.getState();
+        const clients = clientManager.getAllClients();
+        if (clients.length === 0) {
+            return res.status(400).json({ error: 'No clients available - create clients via API first' });
+        }
+        
+        // Use the first available client
+        const firstClient = clients[0];
+        if (!firstClient) {
+            return res.status(400).json({ error: 'No valid client found' });
+        }
+        
+        const clientState = await firstClient.client.getState();
         console.log('🧪 Client state before send:', clientState);
         
         // Try to send message directly
         const formattedNumber = `${number}@c.us`;
-        const result = await client.sendMessage(formattedNumber, message);
+        const result = await firstClient.client.sendMessage(formattedNumber, message);
         
         console.log('🧪 Message sent successfully:', result);
         
@@ -1133,21 +963,39 @@ app.post('/test-events', async (req: Request, res: Response) => {
     try {
         console.log('🧪 Testing event system...');
         
-        // Check if client is ready
-        const clientState = await client.getState();
+        const clients = clientManager.getAllClients();
+        if (clients.length === 0) {
+            return res.json({
+                success: true,
+                message: 'No clients available - create clients via API first',
+                clientCount: 0
+            });
+        }
+        
+        // Test the first available client
+        const firstClient = clients[0];
+        if (!firstClient) {
+            return res.json({
+                success: true,
+                message: 'No valid client found',
+                clientCount: 0
+            });
+        }
+        
+        const clientState = await firstClient.client.getState();
         console.log('🧪 Client state:', clientState);
         
         // Check if client can get chats
-        const chats = await client.getChats();
+        const chats = await firstClient.client.getChats();
         console.log('🧪 Number of chats:', chats.length);
         
         // Check if client can get the current user
-        console.log('🧪 Client info:', client.info);
+        console.log('🧪 Client info:', firstClient.client.info);
         
         // Check if we can get the current user's number
-        if (client.info) {
-            console.log('🧪 Client info wid:', (client.info as any).wid);
-            console.log('🧪 Client info wid serialized:', (client.info as any).wid?._serialized);
+        if (firstClient.client.info) {
+            console.log('🧪 Client info wid:', (firstClient.client.info as any).wid);
+            console.log('🧪 Client info wid serialized:', (firstClient.client.info as any).wid?._serialized);
         }
         
         // Check Chromium path
@@ -1155,10 +1003,11 @@ app.post('/test-events', async (req: Request, res: Response) => {
         
         return res.json({
             success: true,
+            clientId: firstClient.clientId,
             clientState,
             chatCount: chats.length,
-            clientInfo: client.info ? 'Available' : 'Not available',
-            myWhatsAppNumber,
+            clientInfo: firstClient.client.info ? 'Available' : 'Not available',
+            totalClients: clients.length,
             chromiumPath: BROWSER_PATH
         });
     } catch (error) {
@@ -1174,8 +1023,19 @@ app.post('/greetings', async (req: Request<{}, {}, GreetingRequest>, res: Respon
         if (!sender || !message || !campaign) {
             return res.status(400).send({ error: 'Sender and message are required.' });
         }
+        // Get the first available client for backward compatibility
+        const clients = clientManager.getAllClients();
+        if (clients.length === 0) {
+            return res.status(400).json({ error: 'No clients available - create clients via API first' });
+        }
+        
+        const firstClient = clients[0];
+        if (!firstClient) {
+            return res.status(400).json({ error: 'No valid client found' });
+        }
+        
         // Call the sendMessage function with the received parameters
-        await sendMessage(sender, message, null, true, campaign);
+        await sendMessage(firstClient.clientId, sender, message, null, true, campaign);
         return res.send({ success: true, message: 'Message sent successfully' });
     } catch (error) {
         console.error('Error sending message:', error);
@@ -1186,7 +1046,26 @@ app.post('/greetings', async (req: Request<{}, {}, GreetingRequest>, res: Respon
 // Disconnect WhatsApp session endpoint
 app.post('/bot/disconnect', async (req: Request, res: Response) => {
     try {
-        const isAuthenticated = client.info !== null && client.info !== undefined;
+        const clients = clientManager.getAllClients();
+        if (clients.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'No clients available to disconnect',
+                timestamp: new Date().toISOString()
+            });
+        }
+        
+        // Disconnect the first available client for backward compatibility
+        const firstClient = clients[0];
+        if (!firstClient) {
+            return res.status(400).json({
+                success: false,
+                message: 'No valid client found to disconnect',
+                timestamp: new Date().toISOString()
+            });
+        }
+        
+        const isAuthenticated = firstClient.client.info !== null && firstClient.client.info !== undefined;
         
         if (!isAuthenticated) {
             return res.status(400).json({
@@ -1196,35 +1075,16 @@ app.post('/bot/disconnect', async (req: Request, res: Response) => {
             });
         }
 
-        console.log('🔄 Disconnecting WhatsApp client...');
+        console.log(`🔄 Disconnecting WhatsApp client ${firstClient.clientId}...`);
         
-        // Destroy the client
-        await client.destroy();
+        // Remove the client from the manager
+        await clientManager.removeClient(firstClient.clientId);
         
-        // Clear session data
-        try {
-            if (fs.existsSync(SESSION_PATH)) {
-                const sessionFiles = fs.readdirSync(SESSION_PATH);
-                sessionFiles.forEach(file => {
-                    const filePath = path.join(SESSION_PATH, file);
-                    if (fs.statSync(filePath).isDirectory()) {
-                        fs.rmSync(filePath, { recursive: true, force: true });
-                    } else {
-                        fs.unlinkSync(filePath);
-                    }
-                });
-                console.log('🧹 Session data cleared');
-            }
-        } catch (error) {
-            console.log('⚠️ Could not clear session data:', error);
-        }
+        // Session data is managed by MongoDB RemoteAuth - no file cleanup needed
 
         // Reset global variables
         myWhatsAppNumber = null;
         currentQRCode = null;
-        
-        // Force clear client info to ensure QR code is available
-        (client as any).info = null;
 
         console.log('✅ WhatsApp client disconnected successfully');
         
@@ -1256,19 +1116,39 @@ app.get('/health', (req: Request, res: Response) => {
     });
 });
 
-// QR Code endpoint
+// QR Code endpoint (legacy - use /clients/{clientId}/qr instead)
 app.get('/qr', (req: Request, res: Response) => {
-    const isAuthenticated = client.info !== null && client.info !== undefined;
+    const clients = clientManager.getAllClients();
+    if (clients.length === 0) {
+        return res.status(400).json({
+            success: false,
+            message: 'No clients available - create clients via API first'
+        });
+    }
     
-    if (currentQRCode && !isAuthenticated) {
-        res.status(200).json({
+    // Use the first available client for backward compatibility
+    const firstClient = clients[0];
+    if (!firstClient) {
+        return res.status(400).json({
+            success: false,
+            message: 'No valid client found'
+        });
+    }
+    
+    const isAuthenticated = firstClient.client.info !== null && firstClient.client.info !== undefined;
+    
+    // Get QR code from the client manager
+    const clientStatus = clientManager.getClientStatus(firstClient.clientId);
+    if (clientStatus && clientStatus.qrCode && !isAuthenticated) {
+        return res.status(200).json({
             success: true,
-            qr_code: currentQRCode,
+            qr_code: clientStatus.qrCode,
+            clientId: firstClient.clientId,
             timestamp: new Date().toISOString(),
             message: 'QR code is available for scanning'
         });
     } else {
-        res.status(404).json({
+        return res.status(404).json({
             success: false,
             message: isAuthenticated ? 'WhatsApp client is already authenticated' : 'QR code not available yet. Please wait for WhatsApp client to generate one.',
             timestamp: new Date().toISOString()
@@ -1276,11 +1156,29 @@ app.get('/qr', (req: Request, res: Response) => {
     }
 });
 
-// QR Code status endpoint
+// QR Code status endpoint (legacy - use /clients/{clientId} instead)
 app.get('/qr/status', (req: Request, res: Response) => {
-    const isAuthenticated = client.info !== null && client.info !== undefined;
-    const hasQR = currentQRCode !== null && !isAuthenticated;
-    res.status(200).json({
+    const clients = clientManager.getAllClients();
+    if (clients.length === 0) {
+        return res.status(400).json({
+            success: false,
+            message: 'No clients available - create clients via API first'
+        });
+    }
+    
+    // Use the first available client for backward compatibility
+    const firstClient = clients[0];
+    if (!firstClient) {
+        return res.status(400).json({
+            success: false,
+            message: 'No valid client found'
+        });
+    }
+    
+    const isAuthenticated = firstClient.client.info !== null && firstClient.client.info !== undefined;
+    const clientStatus = clientManager.getClientStatus(firstClient.clientId);
+    const hasQR = clientStatus && clientStatus.qrCode && !isAuthenticated;
+    return res.status(200).json({
         success: true,
         authenticated: isAuthenticated,
         has_qr: hasQR,
@@ -1289,13 +1187,36 @@ app.get('/qr/status', (req: Request, res: Response) => {
     });
 });
 
-// Bot status endpoint
+// Bot status endpoint (legacy - use /clients instead)
 app.get('/bot/status', (req: Request, res: Response) => {
-    const isAuthenticated = client.info !== null && client.info !== undefined;
-    res.status(200).json({
+    const clients = clientManager.getAllClients();
+    if (clients.length === 0) {
+        return res.status(200).json({
+            success: true,
+            authenticated: false,
+            message: 'No clients available - create clients via API first',
+            totalClients: 0
+        });
+    }
+    
+    // Use the first available client for backward compatibility
+    const firstClient = clients[0];
+    if (!firstClient) {
+        return res.status(200).json({
+            success: true,
+            authenticated: false,
+            message: 'No valid client found',
+            totalClients: 0
+        });
+    }
+    
+    const isAuthenticated = firstClient.client.info !== null && firstClient.client.info !== undefined;
+    return res.status(200).json({
         success: true,
         authenticated: isAuthenticated,
+        clientId: firstClient.clientId,
         bot_phone_number: myWhatsAppNumber,
+        totalClients: clients.length,
         uptime: process.uptime(),
         timestamp: new Date().toISOString(),
         message: isAuthenticated ? 'Bot is ready and authenticated' : 'Bot is waiting for authentication'
@@ -1305,6 +1226,542 @@ app.get('/bot/status', (req: Request, res: Response) => {
 // Test endpoint
 app.get('/test', (req: Request, res: Response) => {
     res.status(200).json({ message: 'Test endpoint working' });
+});
+
+// ==================== MULTI-CLIENT API ENDPOINTS ====================
+
+// Create a new WhatsApp client
+app.post('/clients', async (req: Request, res: Response) => {
+    try {
+        const { clientId } = req.body;
+        
+        if (!clientId) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'clientId is required' 
+            });
+        }
+        
+        // Check if client already exists
+        if (clientManager.getClient(clientId)) {
+            return res.status(409).json({ 
+                success: false, 
+                error: `Client with ID '${clientId}' already exists` 
+            });
+        }
+        
+        console.log(`🚀 Creating new WhatsApp client: ${clientId}`);
+        const clientInfo = await clientManager.createClient(clientId);
+        
+        // Initialize the client
+        await clientManager.initializeClient(clientId);
+        
+        return res.status(201).json({
+            success: true,
+            message: `Client '${clientId}' created and initialized successfully`,
+            clientId: clientInfo.clientId,
+            status: clientInfo.status
+        });
+        
+    } catch (error) {
+        console.error('❌ Error creating client:', error);
+        return res.status(500).json({ 
+            success: false, 
+            error: error instanceof Error ? error.message : 'Unknown error' 
+        });
+    }
+});
+
+// List all clients
+app.get('/clients', (req: Request, res: Response) => {
+    try {
+        const clients = clientManager.getAllClientsStatus();
+        
+        return res.status(200).json({
+            success: true,
+            clients: clients,
+            total: clients.length
+        });
+        
+        } catch (error) {
+        console.error('❌ Error listing clients:', error);
+        return res.status(500).json({ 
+            success: false, 
+            error: error instanceof Error ? error.message : 'Unknown error' 
+        });
+    }
+});
+
+// Get specific client status
+app.get('/clients/:clientId', (req: Request, res: Response) => {
+    try {
+        const { clientId } = req.params;
+        if (!clientId) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'clientId parameter is required' 
+            });
+        }
+        const clientStatus = clientManager.getClientStatus(clientId);
+        
+        if (!clientStatus) {
+            return res.status(404).json({ 
+                success: false, 
+                error: `Client with ID '${clientId}' not found` 
+            });
+        }
+        
+        return res.status(200).json({
+            success: true,
+            client: clientStatus
+        });
+        
+    } catch (error) {
+        console.error('❌ Error getting client status:', error);
+        return res.status(500).json({ 
+            success: false, 
+            error: error instanceof Error ? error.message : 'Unknown error' 
+        });
+    }
+});
+
+// Get QR code for a specific client
+app.get('/clients/:clientId/qr', (req: Request, res: Response) => {
+    try {
+        const { clientId } = req.params;
+        if (!clientId) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'clientId parameter is required' 
+            });
+        }
+        const clientInfo = clientManager.getClient(clientId);
+        
+        if (!clientInfo) {
+            return res.status(404).json({ 
+                success: false, 
+                error: `Client with ID '${clientId}' not found` 
+            });
+        }
+        
+        if (clientInfo.qrCode && clientInfo.status === 'qr_required') {
+            return res.status(200).json({
+                success: true,
+                clientId: clientId,
+                qrCode: clientInfo.qrCode,
+                status: clientInfo.status,
+                message: 'QR code is available for scanning'
+            });
+        } else if (clientInfo.status === 'ready' || clientInfo.status === 'authenticated') {
+            return res.status(200).json({
+                success: true,
+                clientId: clientId,
+                status: clientInfo.status,
+                message: 'Client is already authenticated'
+            });
+        } else {
+            return res.status(404).json({
+                success: false,
+                clientId: clientId,
+                status: clientInfo.status,
+                message: 'QR code not available yet. Please wait for client to generate one.'
+            });
+        }
+        
+    } catch (error) {
+        console.error('❌ Error getting QR code:', error);
+        return res.status(500).json({ 
+            success: false, 
+            error: error instanceof Error ? error.message : 'Unknown error' 
+        });
+    }
+});
+
+// Send message via specific client
+app.post('/clients/:clientId/send', async (req: Request, res: Response) => {
+    try {
+        const { clientId } = req.params;
+        if (!clientId) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'clientId parameter is required' 
+            });
+        }
+        const { number, message } = req.body;
+        
+        if (!number || !message) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Number and message are required' 
+            });
+        }
+        
+        const clientInfo = clientManager.getClient(clientId);
+        if (!clientInfo) {
+            return res.status(404).json({ 
+                success: false, 
+                error: `Client with ID '${clientId}' not found` 
+            });
+        }
+        
+        if (!clientInfo.isReady) {
+            return res.status(400).json({ 
+                success: false, 
+                error: `Client '${clientId}' is not ready` 
+            });
+        }
+        
+        await clientManager.sendMessage(clientId, number, message);
+        
+        return res.status(200).json({
+            success: true,
+            message: 'Message sent successfully',
+            clientId: clientId,
+            to: number
+        });
+        
+                    } catch (error) {
+        console.error('❌ Error sending message:', error);
+        return res.status(500).json({ 
+            success: false, 
+            error: error instanceof Error ? error.message : 'Unknown error' 
+        });
+    }
+});
+
+// Disconnect a specific client
+app.post('/clients/:clientId/disconnect', async (req: Request, res: Response) => {
+    try {
+        const { clientId } = req.params;
+        if (!clientId) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'clientId parameter is required' 
+            });
+        }
+        
+        const clientInfo = clientManager.getClient(clientId);
+        if (!clientInfo) {
+            return res.status(404).json({ 
+                success: false, 
+                error: `Client with ID '${clientId}' not found` 
+            });
+        }
+        
+        await clientManager.disconnectClient(clientId);
+        
+        return res.status(200).json({
+            success: true,
+            message: `Client '${clientId}' disconnected successfully`,
+            clientId: clientId
+        });
+        
+    } catch (error) {
+        console.error('❌ Error disconnecting client:', error);
+        return res.status(500).json({ 
+            success: false, 
+            error: error instanceof Error ? error.message : 'Unknown error' 
+        });
+    }
+});
+
+// Remove a specific client completely
+app.delete('/clients/:clientId', async (req: Request, res: Response) => {
+    try {
+        const { clientId } = req.params;
+        if (!clientId) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'clientId parameter is required' 
+            });
+        }
+        
+        const clientInfo = clientManager.getClient(clientId);
+        if (!clientInfo) {
+            return res.status(404).json({ 
+                success: false, 
+                error: `Client with ID '${clientId}' not found` 
+            });
+        }
+        
+        await clientManager.removeClient(clientId);
+        
+        return res.status(200).json({
+            success: true,
+            message: `Client '${clientId}' removed completely`,
+            clientId: clientId
+        });
+        
+    } catch (error) {
+        console.error('❌ Error removing client:', error);
+        return res.status(500).json({ 
+            success: false, 
+            error: error instanceof Error ? error.message : 'Unknown error' 
+        });
+    }
+});
+
+// ==================== MONGODB SESSION MANAGEMENT ENDPOINTS ====================
+
+// List all sessions in MongoDB
+app.get('/sessions', async (req: Request, res: Response) => {
+    try {
+        // This would require access to the MongoDB store
+        // For now, we'll return a message indicating this feature
+        return res.status(200).json({
+            success: true,
+            message: 'MongoDB session listing not yet implemented',
+            note: 'Sessions are automatically managed by RemoteAuth'
+        });
+    } catch (error) {
+        console.error('❌ Error listing sessions:', error);
+        return res.status(500).json({ 
+            success: false, 
+            error: error instanceof Error ? error.message : 'Unknown error' 
+        });
+    }
+});
+
+// Get MongoDB connection status
+app.get('/mongodb/status', (req: Request, res: Response) => {
+    try {
+        return res.status(200).json({
+            success: true,
+            mongodbEnabled: true,
+            mongodbUri: 'SET',
+            message: 'MongoDB RemoteAuth is required and enabled'
+        });
+    } catch (error) {
+        console.error('❌ Error getting MongoDB status:', error);
+        return res.status(500).json({ 
+            success: false, 
+            error: error instanceof Error ? error.message : 'Unknown error' 
+        });
+    }
+});
+
+// Manual client recovery endpoint
+app.post('/clients/:clientId/recover', async (req: Request, res: Response) => {
+    const { clientId } = req.params;
+    
+    if (!clientId) {
+        return res.status(400).json({
+            success: false,
+            error: 'Client ID is required'
+        });
+    }
+
+    try {
+        const clientInfo = clientManager.getClient(clientId);
+        if (!clientInfo) {
+            return res.status(404).json({
+                success: false,
+                error: `Client ${clientId} not found`
+            });
+        }
+
+        if (clientInfo.status !== 'error') {
+            return res.status(400).json({
+                success: false,
+                error: `Client ${clientId} is not in error status (current status: ${clientInfo.status})`
+            });
+        }
+
+        console.log(`🔄 Manual recovery requested for client ${clientId}`);
+        
+        // Trigger recovery
+        await clientManager.recoverErrorClient(clientId);
+        
+        return res.status(200).json({
+            success: true,
+            message: `Recovery initiated for client ${clientId}`,
+            clientId: clientId
+        });
+        
+    } catch (error) {
+        console.error(`❌ Error recovering client ${clientId}:`, error);
+        return res.status(500).json({
+            success: false,
+            error: `Failed to recover client ${clientId}`
+        });
+    }
+});
+
+// Debug endpoint to check MongoDB collections
+app.get('/mongodb/debug', async (req: Request, res: Response) => {
+    try {
+        if (!mongoose.connection.db) {
+            return res.status(500).json({ 
+                success: false, 
+                error: 'MongoDB database connection not available' 
+            });
+        }
+
+        const collections = await mongoose.connection.db.listCollections().toArray();
+        const collectionNames = collections.map(col => col.name);
+        
+        const sessionsData: any = {};
+        for (const collectionName of collectionNames) {
+            const collection = mongoose.connection.db.collection(collectionName);
+            const documents = await collection.find({}).toArray();
+            sessionsData[collectionName] = {
+                count: documents.length,
+                documents: documents.slice(0, 5) // Show first 5 documents
+            };
+        }
+
+        return res.status(200).json({
+            success: true,
+            collections: collectionNames,
+            data: sessionsData
+        });
+    } catch (error) {
+        console.error('❌ Error debugging MongoDB:', error);
+        return res.status(500).json({ 
+            success: false, 
+            error: error instanceof Error ? error.message : 'Unknown error' 
+        });
+    }
+});
+
+// ==================== COMMAND PROMPT ENDPOINTS ====================
+
+// Command prompt interface
+app.post('/cmd', async (req: Request, res: Response) => {
+    try {
+        const { command, args } = req.body;
+        
+        if (!command) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Command is required' 
+            });
+        }
+        
+        let result: any = { success: true };
+        
+        switch (command.toLowerCase()) {
+            case 'list':
+                result.clients = clientManager.getAllClientsStatus();
+                result.message = `Found ${result.clients.length} clients`;
+                break;
+                
+            case 'create':
+                if (!args || !args.clientId) {
+                    return res.status(400).json({ 
+                        success: false, 
+                        error: 'clientId argument is required for create command' 
+                    });
+                }
+                const clientInfo = await clientManager.createClient(args.clientId);
+                await clientManager.initializeClient(args.clientId);
+                result.message = `Client '${args.clientId}' created and initialized`;
+                result.clientId = args.clientId;
+                break;
+                
+            case 'status':
+                if (!args || !args.clientId) {
+                    return res.status(400).json({ 
+                        success: false, 
+                        error: 'clientId argument is required for status command' 
+                    });
+                }
+                const status = clientManager.getClientStatus(args.clientId);
+                if (!status) {
+                    return res.status(404).json({ 
+                        success: false, 
+                        error: `Client '${args.clientId}' not found` 
+                    });
+                }
+                result.client = status;
+                result.message = `Client '${args.clientId}' status: ${status.status}`;
+                break;
+                
+            case 'qr':
+                if (!args || !args.clientId) {
+                    return res.status(400).json({ 
+                        success: false, 
+                        error: 'clientId argument is required for qr command' 
+                    });
+                }
+                const clientInfo_qr = clientManager.getClient(args.clientId);
+                if (!clientInfo_qr) {
+                    return res.status(404).json({ 
+                        success: false, 
+                        error: `Client '${args.clientId}' not found` 
+                    });
+                }
+                if (clientInfo_qr.qrCode && clientInfo_qr.status === 'qr_required') {
+                    result.qrCode = clientInfo_qr.qrCode;
+                    result.message = `QR code for client '${args.clientId}' is available`;
+        } else {
+                    result.message = `QR code for client '${args.clientId}' is not available (status: ${clientInfo_qr.status})`;
+                }
+                break;
+                
+            case 'send':
+                if (!args || !args.clientId || !args.number || !args.message) {
+                    return res.status(400).json({ 
+                        success: false, 
+                        error: 'clientId, number, and message arguments are required for send command' 
+                    });
+                }
+                await clientManager.sendMessage(args.clientId, args.number, args.message);
+                result.message = `Message sent via client '${args.clientId}' to ${args.number}`;
+                break;
+                
+            case 'disconnect':
+                if (!args || !args.clientId) {
+                    return res.status(400).json({ 
+                        success: false, 
+                        error: 'clientId argument is required for disconnect command' 
+                    });
+                }
+                await clientManager.disconnectClient(args.clientId);
+                result.message = `Client '${args.clientId}' disconnected`;
+                break;
+                
+            case 'remove':
+                if (!args || !args.clientId) {
+                    return res.status(400).json({ 
+                        success: false, 
+                        error: 'clientId argument is required for remove command' 
+                    });
+                }
+                await clientManager.removeClient(args.clientId);
+                result.message = `Client '${args.clientId}' removed completely`;
+                break;
+                
+            case 'help':
+                result.commands = [
+                    'list - List all clients',
+                    'create <clientId> - Create a new client',
+                    'status <clientId> - Get client status',
+                    'qr <clientId> - Get QR code for client',
+                    'send <clientId> <number> <message> - Send message via client',
+                    'disconnect <clientId> - Disconnect client',
+                    'remove <clientId> - Remove client completely',
+                    'help - Show this help'
+                ];
+                result.message = 'Available commands';
+                break;
+                
+            default:
+                return res.status(400).json({ 
+                    success: false, 
+                    error: `Unknown command: ${command}. Use 'help' to see available commands.` 
+                });
+        }
+        
+        return res.status(200).json(result);
+        
+    } catch (error) {
+        console.error('❌ Error executing command:', error);
+        return res.status(500).json({ 
+            success: false, 
+            error: error instanceof Error ? error.message : 'Unknown error' 
+        });
+    }
 });
 
 // Start Express server
@@ -1322,58 +1779,16 @@ async function gracefulShutdown(signal: string): Promise<void> {
     Object.keys(processingUsers).forEach(key => delete processingUsers[key]);
     console.log('🧹 Cleaned up message queues and processing states');
     
-    // Close WhatsApp client gracefully
-    if (client) {
-        try {
-            console.log('📱 Closing WhatsApp client gracefully...');
-            await client.destroy();
-            console.log('✅ WhatsApp client closed successfully');
+    // Close all WhatsApp clients gracefully
+    try {
+        console.log('📱 Closing all WhatsApp clients gracefully...');
+        await clientManager.gracefulShutdown();
+        console.log('✅ All WhatsApp clients closed successfully');
         } catch (error) {
-            console.error('❌ Error closing WhatsApp client:', error);
-        }
+        console.error('❌ Error closing WhatsApp clients:', error);
     }
     
-    // Enhanced session preservation for Railway
-    try {
-        console.log(`💾 Preserving session data at: ${SESSION_PATH}`);
-        
-        // Check session directory exists
-        if (fs.existsSync(SESSION_PATH)) {
-            const sessionFiles = fs.readdirSync(SESSION_PATH);
-            console.log(`📁 Found ${sessionFiles.length} session files to preserve`);
-            
-            // Only remove lock files, preserve all session data
-            const sessionDir = path.join(SESSION_PATH, 'session');
-            if (fs.existsSync(sessionDir)) {
-                const lockFiles = fs.readdirSync(sessionDir).filter(file => 
-                    file.includes('lock') || file.startsWith('Singleton')
-                );
-                
-                lockFiles.forEach(file => {
-                    try {
-                        fs.unlinkSync(path.join(sessionDir, file));
-                        console.log(`🔓 Removed lock file: ${file}`);
-                    } catch (error) {
-                        console.log(`⚠️ Could not remove lock file ${file}: ${error}`);
-                    }
-                });
-                
-                console.log(`✅ Preserved ${sessionFiles.length} session files`);
-                console.log(`🔓 Removed ${lockFiles.length} lock files`);
-            }
-        } else {
-            console.log('📝 No session directory found - first time setup');
-        }
-        
-        // Verify session data is preserved
-        if (fs.existsSync(SESSION_PATH)) {
-            const remainingFiles = fs.readdirSync(SESSION_PATH);
-            console.log(`💾 Session data preserved: ${remainingFiles.join(', ')}`);
-        }
-        
-    } catch (error) {
-        console.error('❌ Error during session preservation:', error);
-    }
+    // Session data is managed by MongoDB RemoteAuth - no file preservation needed
     
     console.log('✅ Graceful shutdown completed, exiting...');
     process.exit(0);
@@ -1399,4 +1814,4 @@ setInterval(() => {
             console.log(`Cleaned up stale processing state for ${user}`);
         }
     });
-}, 60000); // Check every minute
+}, 60000); // Check every minute 
