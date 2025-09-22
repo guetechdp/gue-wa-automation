@@ -3,16 +3,27 @@ import { Collection } from 'lokijs';
 
 // Environment variables interface
 export interface Environment {
-  NODE_ENV?: string;
-  M_WAITING_TIME?: string;
-  CHROMIUM_PATH?: string;
-  WHITELISTED_NUMBERS?: string;
-  FW_ENDPOINT?: string;
-  FW_AUTH_TOKEN?: string;
-  JWT_SECRET?: string;
-  AI_AGENT?: string;
-  PORT?: string;
-  MONGODB_URI?: string;
+  NODE_ENV?: string | undefined;
+  M_WAITING_TIME?: string | undefined;
+  CHROMIUM_PATH?: string | undefined;
+  WHITELISTED_NUMBERS?: string | undefined;
+  FW_ENDPOINT?: string | undefined;
+  FW_AUTH_TOKEN?: string | undefined;
+  JWT_SECRET?: string | undefined;
+  AI_AGENT?: string | undefined;
+  PORT?: string | undefined;
+  MONGODB_URI?: string | undefined;
+}
+
+// WhatsApp Service Configuration interface
+export interface WhatsAppServiceConfig {
+  chromiumPath: string;
+  puppeteerArgs: string[];
+  mongoUri: string;
+  backupSyncIntervalMs?: number;
+  maxRetries?: number;
+  retryDelayMs?: number;
+  healthCheckIntervalMs?: number;
 }
 
 // AI Agent response interface
