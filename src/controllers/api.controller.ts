@@ -281,9 +281,6 @@ export class ApiController {
             // Sign JWT with agent data using jsonwebtoken
             const token = jwt.sign(jwtPayload, jwtSecret, { algorithm: 'HS256' });
 
-            console.log('🧪 JWT created for agent');
-            console.log('🧪 Generated JWT:', token);
-            console.log('🧪 JWT payload:', JSON.stringify(jwtPayload, null, 2));
 
             const payload = {
                 messages: message,
@@ -293,7 +290,6 @@ export class ApiController {
                 clientId: clientId
             };
 
-            console.log('🧪 AI API Request Payload:', JSON.stringify(payload, null, 2));
 
             const requestHeaders = {
                 'Content-Type': 'application/json',
@@ -313,10 +309,7 @@ export class ApiController {
             });
             const endTime = Date.now();
 
-            console.log('🧪 AI API Response received in:', `${endTime - startTime}ms`);
-            console.log('🧪 AI API Response Status:', response.status);
-            console.log('🧪 AI API Response Headers:', JSON.stringify(response.headers, null, 2));
-            console.log('🧪 AI API Response Data:', JSON.stringify(response.data, null, 2));
+            console.log(`🧪 Response Status: ${response.status} ${response.status >= 200 && response.status < 300 ? '✅' : '❌'} (${endTime - startTime}ms)`);
 
             return res.status(200).json({
                 success: true,
