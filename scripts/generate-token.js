@@ -50,17 +50,12 @@ async function generateToken() {
         // Merge with custom payload
         const payload = { ...defaultPayload, ...customPayload };
 
-        // Generate JWT key
-        const key = await crypto.subtle.importKey(
-            'raw',
-            new TextEncoder().encode(jwtSecret),
-            { name: 'HMAC', hash: 'SHA-256' },
-            false,
-            ['sign']
-        );
+        // Generate JWT key using jose library
+        const jose = await import('jose');
+        const key = new TextEncoder().encode(jwtSecret);
 
         // Generate token
-        const { SignJWT } = await import('jose');
+        const { SignJWT } = jose;
         const token = await new SignJWT(payload)
             .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
             .sign(key);
