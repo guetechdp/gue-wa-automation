@@ -101,6 +101,9 @@ RUN npm install --only=production && npm cache clean --force
 # Copy built application from builder stage
 COPY --from=builder /usr/src/app/dist ./dist
 
+# Copy public assets (CSS, etc.)
+COPY public/ ./public/
+
 # Copy environment file if exists
 COPY .env* ./
 
