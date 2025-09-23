@@ -3,8 +3,7 @@ import { WhatsAppService } from '../services/whatsapp.service';
 import { Environment } from '../types';
 import mongoose from 'mongoose';
 import axios from 'axios';
-import { getSignJWT, getJoseModule } from '../utils/jose-import';
-import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
 
 export class ApiController {
     constructor(
@@ -279,16 +278,11 @@ export class ApiController {
                 exp: Math.floor(Date.now() / 1000) + (60 * 60), // 1 hour expiration
             };
 
-            // Sign JWT with agent data using jose library
-            const key = new TextEncoder().encode(jwtSecret);
-
-            const SignJWT = await getSignJWT();
-            const jwt = await new SignJWT(jwtPayload)
-                .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
-                .sign(key);
+            // Sign JWT with agent data using jsonwebtoken
+            const token = jwt.sign(jwtPayload, jwtSecret, { algorithm: 'HS256' });
 
             console.log('🧪 JWT created for agent');
-            console.log('🧪 Generated JWT:', jwt);
+            console.log('🧪 Generated JWT:', token);
             console.log('🧪 JWT payload:', JSON.stringify(jwtPayload, null, 2));
 
             const payload = {
@@ -303,7 +297,7 @@ export class ApiController {
 
             const requestHeaders = {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${jwt}`,
+                'Authorization': `Bearer ${token}`,
                 'X-Agent-Code': agentCode,
                 'X-Agent-Status': 'active',
                 'X-Agent-Type': 'bot'

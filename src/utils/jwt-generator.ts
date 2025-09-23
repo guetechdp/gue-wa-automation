@@ -1,6 +1,5 @@
 import { Environment } from '../types';
-import { getSignJWT, getJoseModule } from './jose-import';
-import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
 
 export class JWTGenerator {
     private jwtSecret: string;
@@ -23,14 +22,7 @@ export class JWTGenerator {
             ...payload
         };
 
-        const SignJWT = await getSignJWT();
-        const key = await this.getJWTKey();
-        
-        const jwt = await new SignJWT(defaultPayload)
-            .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
-            .sign(key);
-
-        return jwt;
+        return jwt.sign(defaultPayload, this.jwtSecret, { algorithm: 'HS256' });
     }
 
     /**
@@ -44,13 +36,6 @@ export class JWTGenerator {
         });
     }
 
-    /**
-     * Get JWT signing key
-     */
-    private async getJWTKey(): Promise<any> {
-        // Convert secret to Uint8Array for jose library
-        return new TextEncoder().encode(this.jwtSecret);
-    }
 }
 
 /**
