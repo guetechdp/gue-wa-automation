@@ -10,6 +10,7 @@ export interface Environment {
   FW_ENDPOINT?: string | undefined;
   FW_AUTH_TOKEN?: string | undefined;
   JWT_SECRET?: string | undefined;
+  WA_JWT_SECRET?: string | undefined;
   AI_AGENT?: string | undefined;
   PORT?: string | undefined;
   MONGODB_URI?: string | undefined;

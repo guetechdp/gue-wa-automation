@@ -11,7 +11,8 @@
     "dev:clean": "./scripts/start-dev.sh",
     "dev:preserve": "ts-node src/index.ts",
     "restart": "./scripts/restart.sh",
-    "watch": "tsc --watch"
+    "watch": "tsc --watch",
+    "generate-token": "node scripts/generate-token.js"
   },
   "dependencies": {
     "@types/qrcode": "^1.5.5",

@@ -8,6 +8,7 @@ import { createWhatsAppRoutes } from './routes/whatsapp.routes';
 import { createApiRoutes } from './routes/api.routes';
 import { Environment } from './types';
 import { swaggerSpec } from './config/swagger';
+import { createAuthMiddleware } from './middleware/auth.middleware';
 import fs from 'fs';
 
 export class WhatsAppBotApp {
@@ -87,9 +88,14 @@ export class WhatsAppBotApp {
             customSiteTitle: 'WhatsApp Bot API Documentation'
         }));
         
-        // Setup routes with controllers
-        this.app.use('/api/whatsapp', createWhatsAppRoutes(this.whatsappController));
-        this.app.use('/api', createApiRoutes(this.apiController));
+        // Create authentication middleware
+        const authMiddleware = createAuthMiddleware(this.env);
+        
+        // Setup routes with controllers and authentication
+        this.app.use('/api/whatsapp', authMiddleware.authenticate, createWhatsAppRoutes(this.whatsappController));
+        
+        // API routes with authentication
+        this.app.use('/api', authMiddleware.authenticate, createApiRoutes(this.apiController));
         
         // Legacy routes for backward compatibility
         this.app.get('/health', (req, res) => this.apiController.healthCheck(req, res));

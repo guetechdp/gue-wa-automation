@@ -255,10 +255,8 @@ export class WhatsAppService {
                 };
             }
 
-            // Deactivate assignment
-            assignment.isActive = false;
-            assignment.updatedAt = new Date();
-            await assignment.save();
+            // Delete assignment completely
+            await ClientAgent.deleteOne({ _id: assignment._id });
 
             // Remove agent code from client info in memory
             clientInfo.ai_agent_code = undefined;

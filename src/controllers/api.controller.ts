@@ -237,9 +237,26 @@ export class ApiController {
         try {
             const { message = 'hai', phoneNumber = '6282121547121', clientId = 'test-client' } = req.body;
             
+            // Get client info to check if agent is assigned
+            const clientInfo = this.whatsappService.getClient(clientId);
+            if (!clientInfo) {
+                return res.status(400).json({
+                    success: false,
+                    error: `Client ${clientId} not found`
+                });
+            }
+
+            // Check if client has an agent assigned
+            if (!clientInfo.ai_agent_code) {
+                return res.status(400).json({
+                    success: false,
+                    error: `No agent assigned to client ${clientId}. Please assign an agent first.`
+                });
+            }
+
             const url = this.env.FW_ENDPOINT || 'http://localhost:3000/api/agents/generalAssistanceAgent/generate/vnext';
             const jwtSecret = this.env.JWT_SECRET || 'default-secret';
-            const agentCode = this.env.AI_AGENT || 'FW';
+            const agentCode = clientInfo.ai_agent_code; // Use client's agent code
 
             console.log('🧪 ===== TEST AI API CALL START =====');
             console.log('🧪 Using AI endpoint URL:', url);
@@ -593,4 +610,5 @@ export class ApiController {
             });
         }
     }
+
 }

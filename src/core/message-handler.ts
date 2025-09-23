@@ -529,6 +529,21 @@ export class MessageHandler {
 
     private async callInferenceFw(message: string, phoneNumber: string, userName: string, clientId: string): Promise<any> {
         try {
+            // Get client info to check if agent is assigned
+            const clientInfo = this.whatsappService.getClient(clientId);
+            if (!clientInfo) {
+                console.error(`❌ Client ${clientId} not found`);
+                return { text: "Please connect to an agent" };
+            }
+
+            // Check if client has an agent assigned
+            if (!clientInfo.ai_agent_code) {
+                console.log(`⚠️ No agent assigned to client ${clientId}, sending default message`);
+                return { text: "Please connect to an agent" };
+            }
+
+            console.log(`🤖 Using agent code: ${clientInfo.ai_agent_code} for client ${clientId}`);
+
             let url = this.env.FW_ENDPOINT || 'http://localhost:3000/api/agents/generalAssistanceAgent/generate/vnext';
             // Ensure URL has protocol
             if (!url.startsWith('http://') && !url.startsWith('https://')) {
@@ -549,6 +564,10 @@ export class MessageHandler {
                 iat: Math.floor(Date.now() / 1000),
                 phone: phoneNumber || 'unknown',
                 role: 'authenticated',
+                agent_metadata: {
+                    agent_code: clientInfo.ai_agent_code,
+                    status: "active",
+                },
                 app_metadata: {
                     provider: 'wa',
                     providers: ['wa']

@@ -9,6 +9,7 @@ const env: Environment = {
     CHROMIUM_PATH: process.env.CHROMIUM_PATH || undefined,
     FW_ENDPOINT: process.env.FW_ENDPOINT || undefined,
     JWT_SECRET: process.env.JWT_SECRET || undefined,
+    WA_JWT_SECRET: process.env.WA_JWT_SECRET || undefined,
     PORT: process.env.PORT || '8080',
     MONGODB_URI: process.env.MONGODB_URI || undefined,
     M_WAITING_TIME: process.env.M_WAITING_TIME || '30000',

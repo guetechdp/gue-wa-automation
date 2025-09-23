@@ -391,6 +391,10 @@ const swaggerDefinition: SwaggerDefinition = {
     {
       name: 'MongoDB Operations',
       description: 'MongoDB session management and debugging operations. View MongoDB connection status, debug session collections, monitor session storage, and clean up corrupted sessions. Essential for understanding and managing session persistence.'
+    },
+    {
+      name: 'Authentication',
+      description: 'JWT authentication for API access. All API endpoints require valid JWT tokens in the Authorization header. Tokens must be generated locally using the secure token generation script for authorized developers only.'
     }
   ]
 };
