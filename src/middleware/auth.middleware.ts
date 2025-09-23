@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { Environment } from '../types';
-import { getJwtVerify } from '../utils/jose-import';
+import { getJwtVerify, getJoseModule } from '../utils/jose-import';
+import crypto from 'crypto';
 
 export interface AuthenticatedRequest extends Request {
     user?: {
@@ -120,13 +121,8 @@ export class AuthMiddleware {
      * Get JWT verification key
      */
     private async getJWTKey(): Promise<any> {
-        return await crypto.subtle.importKey(
-            'raw',
-            new TextEncoder().encode(this.jwtSecret),
-            { name: 'HMAC', hash: 'SHA-256' },
-            false,
-            ['verify']
-        );
+        // Convert secret to Uint8Array for jose library
+        return new TextEncoder().encode(this.jwtSecret);
     }
 }
 

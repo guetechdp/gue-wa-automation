@@ -1,5 +1,6 @@
 import { Environment } from '../types';
-import { getSignJWT } from './jose-import';
+import { getSignJWT, getJoseModule } from './jose-import';
+import crypto from 'crypto';
 
 export class JWTGenerator {
     private jwtSecret: string;
@@ -47,13 +48,8 @@ export class JWTGenerator {
      * Get JWT signing key
      */
     private async getJWTKey(): Promise<any> {
-        return await crypto.subtle.importKey(
-            'raw',
-            new TextEncoder().encode(this.jwtSecret),
-            { name: 'HMAC', hash: 'SHA-256' },
-            false,
-            ['sign']
-        );
+        // Convert secret to Uint8Array for jose library
+        return new TextEncoder().encode(this.jwtSecret);
     }
 }
 

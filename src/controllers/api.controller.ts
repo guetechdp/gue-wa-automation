@@ -3,7 +3,8 @@ import { WhatsAppService } from '../services/whatsapp.service';
 import { Environment } from '../types';
 import mongoose from 'mongoose';
 import axios from 'axios';
-import { getSignJWT } from '../utils/jose-import';
+import { getSignJWT, getJoseModule } from '../utils/jose-import';
+import crypto from 'crypto';
 
 export class ApiController {
     constructor(
@@ -278,14 +279,8 @@ export class ApiController {
                 exp: Math.floor(Date.now() / 1000) + (60 * 60), // 1 hour expiration
             };
 
-            // Sign JWT with agent data
-            const key = await crypto.subtle.importKey(
-                'raw',
-                new TextEncoder().encode(jwtSecret),
-                { name: 'HMAC', hash: 'SHA-256' },
-                false,
-                ['sign', 'verify']
-            );
+            // Sign JWT with agent data using jose library
+            const key = new TextEncoder().encode(jwtSecret);
 
             const SignJWT = await getSignJWT();
             const jwt = await new SignJWT(jwtPayload)

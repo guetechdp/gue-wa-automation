@@ -2,7 +2,8 @@ import { Message, Chat, MessageMedia } from 'whatsapp-web.js';
 import { WhatsAppService } from '../services/whatsapp.service';
 import { Environment, ChatMessage } from '../types';
 import axios from 'axios';
-import { getSignJWT } from '../utils/jose-import';
+import { getSignJWT, getJoseModule } from '../utils/jose-import';
+import crypto from 'crypto';
 
 export class MessageHandler {
     private messageQueue: { [senderNumber: string]: Array<{ message: Message; timestamp: number }> } = {};
@@ -643,14 +644,10 @@ export class MessageHandler {
 
     private async signJWT(payload: any, secret: string): Promise<string> {
         const SignJWT = await getSignJWT();
+        const jose = await getJoseModule();
         
-        const key = await crypto.subtle.importKey(
-            'raw',
-            new TextEncoder().encode(secret),
-            { name: 'HMAC', hash: 'SHA-256' },
-            false,
-            ['sign', 'verify']
-        );
+        // Convert secret to Uint8Array for jose library
+        const key = new TextEncoder().encode(secret);
 
         return await new SignJWT(payload)
             .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
