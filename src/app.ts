@@ -1,4 +1,5 @@
 import express, { Express } from 'express';
+import swaggerUi from 'swagger-ui-express';
 import { WhatsAppService } from './services/whatsapp.service';
 import { MessageHandler } from './core/message-handler';
 import { WhatsAppController } from './controllers/whatsapp.controller';
@@ -6,6 +7,7 @@ import { ApiController } from './controllers/api.controller';
 import { createWhatsAppRoutes } from './routes/whatsapp.routes';
 import { createApiRoutes } from './routes/api.routes';
 import { Environment } from './types';
+import { swaggerSpec } from './config/swagger';
 import fs from 'fs';
 
 export class WhatsAppBotApp {
@@ -18,6 +20,9 @@ export class WhatsAppBotApp {
     constructor(private env: Environment) {
         this.app = express();
         this.app.use(express.json());
+        
+        // Serve static files (for Swagger UI themes)
+        this.app.use('/public', express.static('public'));
         
         // Configure WhatsApp service
         const whatsappConfig = {
@@ -71,6 +76,17 @@ export class WhatsAppBotApp {
     }
 
     private setupRoutes(): void {
+        // Setup Swagger documentation with Monokai theme
+        const monokaiCSS = fs.readFileSync('public/css/theme-monokai.css', 'utf8');
+        this.app.use('/documentation', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+            explorer: true,
+            customCss: `
+                .swagger-ui .topbar { display: none }
+                ${monokaiCSS}
+            `,
+            customSiteTitle: 'WhatsApp Bot API Documentation'
+        }));
+        
         // Setup routes with controllers
         this.app.use('/api/whatsapp', createWhatsAppRoutes(this.whatsappController));
         this.app.use('/api', createApiRoutes(this.apiController));
@@ -121,6 +137,7 @@ export class WhatsAppBotApp {
                 console.log(`🌐 WhatsApp Bot API server running on port ${port}`);
                 console.log(`📱 Health check: http://localhost:${port}/health`);
                 console.log(`🔧 API endpoints: http://localhost:${port}/api/whatsapp/*`);
+                console.log(`📚 API Documentation: http://localhost:${port}/documentation`);
             });
             
         } catch (error) {

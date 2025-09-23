@@ -202,7 +202,7 @@ export class WhatsAppClientManager {
             console.log(`🧹 Cleaning up MongoDB session for client ${clientId} using wwebjs-mongo API...`);
             
             // Use the proper wwebjs-mongo delete method
-            await this.mongoStore.delete({ session: `RemoteAuth-${clientId}` });
+            await this.mongoStore.delete({ session: clientId });
             console.log(`✅ MongoDB session cleanup completed for client ${clientId} using wwebjs-mongo API`);
             
         } catch (error) {
@@ -216,28 +216,22 @@ export class WhatsAppClientManager {
                     throw new Error('MongoDB database connection not available');
                 }
 
-                // Remove session file collections (GridFS buckets)
+                // Remove all session collections (both .files and .chunks for GridFS)
                 const collections = await mongoose.connection.db.listCollections().toArray();
-                const sessionFileCollections = collections.filter(col => 
-                    col.name.startsWith(`whatsapp-RemoteAuth-${clientId}.files`)
+                const sessionCollections = collections.filter(col => 
+                    col.name.startsWith(`whatsapp-RemoteAuth-${clientId}`)
                 );
 
-                for (const collection of sessionFileCollections) {
+                console.log(`🗑️ Found ${sessionCollections.length} session collections to clean up for client ${clientId}:`);
+                sessionCollections.forEach(col => console.log(`   - ${col.name}`));
+
+                for (const collection of sessionCollections) {
                     try {
                         await mongoose.connection.db.collection(collection.name).drop();
-                        console.log(`🗑️ Dropped collection: ${collection.name}`);
+                        console.log(`✅ Dropped collection: ${collection.name}`);
                     } catch (dropError) {
                         console.warn(`⚠️ Failed to drop collection ${collection.name}:`, dropError);
                     }
-                }
-
-                // Also try to remove the main session collection
-                const mainCollectionName = `whatsapp-RemoteAuth-${clientId}`;
-                try {
-                    await mongoose.connection.db.collection(mainCollectionName).drop();
-                    console.log(`🗑️ Dropped main session collection: ${mainCollectionName}`);
-                } catch (dropError) {
-                    console.warn(`⚠️ Failed to drop main session collection ${mainCollectionName}:`, dropError);
                 }
 
                 console.log(`✅ Fallback manual cleanup completed for client ${clientId}`);
@@ -279,11 +273,30 @@ export class WhatsAppClientManager {
 
         console.log(`🔗 Using RemoteAuth (MongoDB) for client ${clientId}`);
         
+        // Ensure the data path directory exists
+        const fs = require('fs');
+        const path = require('path');
+        const dataPath = '.wwebjs_auth';
+        if (!fs.existsSync(dataPath)) {
+            fs.mkdirSync(dataPath, { recursive: true });
+            console.log(`📁 Created data path directory: ${dataPath}`);
+        }
+        
         const authStrategy = new RemoteAuth({
-            clientId: clientId,
             store: this.mongoStore,
-            backupSyncIntervalMs: this.config.backupSyncIntervalMs || 300000 // 5 minutes default
+            clientId: clientId, // Required for multiple sessions
+            backupSyncIntervalMs: 300000 // 5 minutes default
         });
+        
+        console.log(`🔍 DEBUG: RemoteAuth configured for client ${clientId} with backupSyncIntervalMs: 300000`);
+        
+        // Test MongoStore functionality
+        try {
+            const testSessionExists = await this.mongoStore.sessionExists({ session: clientId });
+            console.log(`🔍 DEBUG: MongoStore test - session exists check for ${clientId}: ${testSessionExists}`);
+        } catch (error) {
+            console.error(`❌ DEBUG: MongoStore test failed for ${clientId}:`, error);
+        }
 
         const client = new Client({
             authStrategy: authStrategy,
@@ -363,19 +376,52 @@ export class WhatsAppClientManager {
 
         // Remote session saved (for RemoteAuth) - this is crucial for session persistence
         client.on('remote_session_saved', () => {
+            console.log(`🔍 DEBUG: remote_session_saved event fired for client ${clientId}`);
             console.log(`💾 Remote session saved for client ${clientId} in MongoDB - session will persist across restarts!`);
             clientInfo.status = 'session_saved';
             clientInfo.lastActivity = new Date();
+            
+            // Emit a custom event to notify waiting processes
+            client.emit('session_saved_notification');
+        });
+
+        // Also listen for any other relevant events
+        client.on('change_state', (state) => {
+            console.log(`🔍 DEBUG: Client ${clientId} state changed to: ${state}`);
         });
 
         // Client ready
         client.on('ready', () => {
             console.log(`✅ Client ${clientId} is ready!`);
             clientInfo.isReady = true;
-            clientInfo.status = 'ready';
+            // Only set status to 'ready' if it's not already 'session_saved'
+            if (clientInfo.status !== 'session_saved') {
+                clientInfo.status = 'ready';
+            }
             clientInfo.phoneNumber = client.info?.wid?._serialized;
             clientInfo.lastActivity = new Date();
             console.log(`📞 Client ${clientId} phone number: ${clientInfo.phoneNumber}`);
+            
+            // Set a timeout to check if session gets saved (fallback mechanism)
+            setTimeout(() => {
+                if (clientInfo.status === 'ready') {
+                    console.log(`⏰ Session save timeout check for client ${clientId} - still in 'ready' status, checking MongoDB...`);
+                    // Check if session exists in MongoDB
+                    this.mongoStore.sessionExists({ session: clientId })
+                        .then((exists: boolean) => {
+                            if (exists) {
+                                console.log(`💾 Session found in MongoDB for client ${clientId} - updating status to 'session_saved'`);
+                                clientInfo.status = 'session_saved';
+                                clientInfo.lastActivity = new Date();
+                            } else {
+                                console.log(`⚠️ Session not found in MongoDB for client ${clientId} after timeout`);
+                            }
+                        })
+                        .catch((error: any) => {
+                            console.error(`❌ Error checking session existence for client ${clientId}:`, error);
+                        });
+                }
+            }, 120000); // 2 minutes timeout
         });
 
         // Authentication failure
@@ -691,34 +737,35 @@ export class WhatsAppClientManager {
                         const clientId = collection.name.replace('whatsapp-RemoteAuth-', '').replace('.files', '');
                         console.log(`🔄 Restoring session for client: ${clientId}`);
                         
-                        // For RemoteAuth, we don't need to check sessionExists manually
-                        // The RemoteAuth strategy will handle session restoration automatically
-                        console.log(`✅ Session data found for client ${clientId}, creating client to restore...`);
+                        // Directly attempt to create client for existing session collection
+                        // The RemoteAuth strategy will handle the session restoration automatically
+                        console.log(`✅ Found session collection for client ${clientId}, creating client to restore...`);
                         try {
                             await this.createClient(clientId);
                             
-                            // Wait for the client to authenticate (either ready or QR required)
-                            console.log(`⏳ Waiting for client ${clientId} to authenticate...`);
-                            await this.waitForClientAuthentication(clientId, 30000); // 30 second timeout
+                            // Wait for the client to become ready (up to 5 minutes as per documentation)
+                            console.log(`⏳ Waiting for client ${clientId} to authenticate and become ready...`);
+                            await this.waitForClientReady(clientId, 300000); // 5 minutes timeout
                             
                             const clientInfo = this.clients.get(clientId);
                             if (clientInfo && clientInfo.isReady) {
                                 console.log(`✅ Successfully restored session for client: ${clientId} - Client is ready!`);
-                            } else if (clientInfo && clientInfo.status === 'session_saved') {
-                                console.log(`✅ Session restoration successful for client: ${clientId} - Session saved to MongoDB!`);
-                            } else if (clientInfo && clientInfo.status === 'qr_required') {
-                                console.log(`⚠️ Session restoration failed for client ${clientId} - QR code required (session may be corrupted or expired)`);
-                                // Wait a bit longer for session to be saved (up to 2 minutes as per documentation)
-                                console.log(`⏳ Waiting up to 2 minutes for session to be saved for client ${clientId}...`);
-                                await this.waitForSessionSaved(clientId, 120000); // 2 minutes
+                                
+                                // Wait for the remote_session_saved event (up to 2 minutes as per documentation)
+                                console.log(`⏳ Waiting for session to be saved to MongoDB for client ${clientId}...`);
+                                await this.waitForSessionSaved(clientId, 120000); // 2 minutes timeout
                                 
                                 const updatedClientInfo = this.clients.get(clientId);
                                 if (updatedClientInfo && updatedClientInfo.status === 'session_saved') {
-                                    console.log(`✅ Session was saved for client ${clientId} after waiting!`);
+                                    console.log(`💾 Session successfully saved for client ${clientId} - will persist across restarts!`);
                                 } else {
-                                    console.log(`🧹 Session was not saved for client ${clientId}, cleaning up corrupted session...`);
-                                    await this.cleanupMongoSession(clientId);
+                                    console.log(`⚠️ Session not yet saved for client ${clientId}, but client is ready`);
                                 }
+                            } else if (clientInfo && clientInfo.status === 'qr_required') {
+                                console.log(`⚠️ Session restoration failed for client ${clientId} - QR code required (session may be corrupted or expired)`);
+                                // Clean up corrupted session
+                                console.log(`🧹 Cleaning up corrupted session for client ${clientId}...`);
+                                await this.cleanupMongoSession(clientId);
                             } else {
                                 console.log(`⚠️ Session restoration status unknown for client ${clientId} - Status: ${clientInfo?.status}`);
                             }
@@ -737,20 +784,20 @@ export class WhatsAppClientManager {
         }
     }
 
-    private async waitForClientAuthentication(clientId: string, timeoutMs: number): Promise<void> {
+    private async waitForClientReady(clientId: string, timeoutMs: number): Promise<void> {
         const clientInfo = this.clients.get(clientId);
         if (!clientInfo) {
             throw new Error(`Client ${clientId} not found`);
         }
 
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve) => {
             const timeout = setTimeout(() => {
-                console.log(`⏰ Authentication timeout for client ${clientId} after ${timeoutMs}ms`);
+                console.log(`⏰ Client ready timeout for client ${clientId} after ${timeoutMs}ms`);
                 resolve(); // Don't reject, just resolve to continue
             }, timeoutMs);
 
             const checkStatus = () => {
-                console.log(`🔍 Checking authentication status for client ${clientId}: ${clientInfo.status}, ready: ${clientInfo.isReady}`);
+                console.log(`🔍 Checking client ready status for client ${clientId}: ${clientInfo.status}, ready: ${clientInfo.isReady}`);
                 
                 if (clientInfo.isReady) {
                     console.log(`✅ Client ${clientId} is ready!`);
@@ -763,7 +810,11 @@ export class WhatsAppClientManager {
                 } else if (clientInfo.status === 'error') {
                     console.log(`❌ Client ${clientId} authentication failed with error status`);
                     clearTimeout(timeout);
-                    reject(new Error(`Client ${clientId} authentication failed with error status`));
+                    resolve(); // Don't reject, just resolve to continue
+                } else if (clientInfo.status === 'session_saved') {
+                    console.log(`💾 Client ${clientId} session is saved!`);
+                    clearTimeout(timeout);
+                    resolve();
                 }
             };
 
@@ -771,9 +822,8 @@ export class WhatsAppClientManager {
             checkStatus();
 
             // Set up event listeners for status changes
-            const originalStatus = clientInfo.status;
             const statusCheckInterval = setInterval(() => {
-                if (clientInfo.status !== originalStatus || clientInfo.isReady) {
+                if (clientInfo.isReady || clientInfo.status === 'qr_required' || clientInfo.status === 'error' || clientInfo.status === 'session_saved') {
                     clearInterval(statusCheckInterval);
                     checkStatus();
                 }
@@ -811,17 +861,29 @@ export class WhatsAppClientManager {
             // Check immediately
             checkStatus();
 
-            // Set up event listeners for status changes
+            // Listen for the session_saved_notification event
+            const onSessionSaved = () => {
+                console.log(`💾 Session saved event received for client ${clientId}!`);
+                clearTimeout(timeout);
+                clientInfo.client.removeListener('session_saved_notification', onSessionSaved);
+                resolve();
+            };
+
+            clientInfo.client.on('session_saved_notification', onSessionSaved);
+
+            // Set up event listeners for status changes as fallback
             const statusCheckInterval = setInterval(() => {
                 if (clientInfo.status === 'session_saved') {
                     clearInterval(statusCheckInterval);
+                    clientInfo.client.removeListener('session_saved_notification', onSessionSaved);
                     checkStatus();
                 }
             }, 1000);
 
-            // Clean up interval on timeout
+            // Clean up interval and listener on timeout
             setTimeout(() => {
                 clearInterval(statusCheckInterval);
+                clientInfo.client.removeListener('session_saved_notification', onSessionSaved);
             }, timeoutMs);
         });
     }

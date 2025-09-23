@@ -11,6 +11,56 @@ export class ApiController {
         private env: Environment
     ) {}
 
+    /**
+     * @swagger
+     * /api/health:
+     *   get:
+     *     summary: Health check endpoint
+     *     description: Returns the health status of the WhatsApp Bot API and all connected clients
+     *     tags: [Health & Status]
+     *     responses:
+     *       200:
+     *         description: API is healthy
+     *         content:
+     *           application/json:
+     *             schema:
+     *               type: object
+     *               properties:
+     *                 success:
+     *                   type: boolean
+     *                   example: true
+     *                 message:
+     *                   type: string
+     *                   example: "WhatsApp Bot API is healthy"
+     *                 status:
+     *                   type: object
+     *                   properties:
+     *                     totalClients:
+     *                       type: number
+     *                       example: 2
+     *                     readyClients:
+     *                       type: number
+     *                       example: 1
+     *                     errorClients:
+     *                       type: number
+     *                       example: 0
+     *                     isHealthy:
+     *                       type: boolean
+     *                       example: true
+     *                     clients:
+     *                       type: array
+     *                       items:
+     *                         $ref: '#/components/schemas/ClientInfo'
+     *                 timestamp:
+     *                   type: string
+     *                   format: date-time
+     *       500:
+     *         description: Health check failed
+     *         content:
+     *           application/json:
+     *             schema:
+     *               $ref: '#/components/schemas/ErrorResponse'
+     */
     async healthCheck(req: Request, res: Response) {
         try {
             const healthStatus = this.whatsappService.getHealthStatus();
@@ -106,6 +156,83 @@ export class ApiController {
         }
     }
 
+    /**
+     * @swagger
+     * /api/test-ai-api:
+     *   post:
+     *     summary: Test AI API integration
+     *     description: Tests the AI API integration by sending a test message and verifying the JWT authentication and response
+     *     tags: [Testing & Debugging]
+     *     requestBody:
+     *       required: false
+     *       content:
+     *         application/json:
+     *           schema:
+     *             type: object
+     *             properties:
+     *               message:
+     *                 type: string
+     *                 description: Test message to send to AI API
+     *                 example: "hai"
+     *               phoneNumber:
+     *                 type: string
+     *                 description: Phone number for the test session
+     *                 example: "6282121547121"
+     *               clientId:
+     *                 type: string
+     *                 description: Client ID for the test
+     *                 example: "test-client"
+     *     responses:
+     *       200:
+     *         description: AI API test completed successfully
+     *         content:
+     *           application/json:
+     *             schema:
+     *               type: object
+     *               properties:
+     *                 success:
+     *                   type: boolean
+     *                   example: true
+     *                 message:
+     *                   type: string
+     *                   example: "AI API test completed"
+     *                 jwt:
+     *                   type: object
+     *                   properties:
+     *                     payload:
+     *                       type: object
+     *                     token:
+     *                       type: string
+     *                 request:
+     *                   type: object
+     *                   properties:
+     *                     url:
+     *                       type: string
+     *                     payload:
+     *                       type: object
+     *                     headers:
+     *                       type: object
+     *                 response:
+     *                   type: object
+     *                   properties:
+     *                     status:
+     *                       type: number
+     *                     headers:
+     *                       type: object
+     *                     data:
+     *                       type: object
+     *                     responseTime:
+     *                       type: string
+     *                 timestamp:
+     *                   type: string
+     *                   format: date-time
+     *       500:
+     *         description: AI API test failed
+     *         content:
+     *           application/json:
+     *             schema:
+     *               $ref: '#/components/schemas/ErrorResponse'
+     */
     async testAIApi(req: Request, res: Response) {
         try {
             const { message = 'hai', phoneNumber = '6282121547121', clientId = 'test-client' } = req.body;
@@ -324,6 +451,27 @@ export class ApiController {
         }
     }
 
+    /**
+     * @swagger
+     * /api/mongodb/debug:
+     *   get:
+     *     summary: MongoDB debug information
+     *     description: Retrieves detailed debug information about MongoDB collections and session storage
+     *     tags: [MongoDB Operations]
+     *     responses:
+     *       200:
+     *         description: MongoDB debug information retrieved successfully
+     *         content:
+     *           application/json:
+     *             schema:
+     *               $ref: '#/components/schemas/MongoDBStatus'
+     *       500:
+     *         description: Internal server error
+     *         content:
+     *           application/json:
+     *             schema:
+     *               $ref: '#/components/schemas/ErrorResponse'
+     */
     async debugMongoDB(req: Request, res: Response) {
         try {
             if (!mongoose.connection.db) {

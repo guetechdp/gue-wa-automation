@@ -1,309 +1,361 @@
-# WhatsApp Bot with AI Integration (TypeScript)
+# WhatsApp Bot API 🚀
 
-A TypeScript-based WhatsApp bot that integrates with AI services for automated responses with message queuing and deduplication.
+A comprehensive WhatsApp bot API with multi-client support, session persistence, and AI integration built with Node.js, TypeScript, and MongoDB.
 
-## Features
+## ✨ Features
 
-- **WhatsApp Web Integration**: Uses whatsapp-web.js for seamless WhatsApp connectivity
-- **AI-Powered Responses**: Integrates with AI inference API for intelligent message handling
-- **Message Queuing**: Prevents spam by batching messages from the same user within a time window
-- **Session Management**: Maintains conversation context using LokiJS database
-- **TypeScript Support**: Full TypeScript implementation with strict type checking
-- **Docker Support**: Containerized deployment with multi-stage builds
-- **Health Monitoring**: Built-in health check endpoints
-- **Graceful Shutdown**: Proper cleanup on application termination
+- **🔄 Multi-Client Support**: Manage multiple WhatsApp clients simultaneously
+- **💾 Session Persistence**: MongoDB-based session storage with automatic restoration
+- **🤖 AI Integration**: Built-in AI API integration with JWT authentication
+- **📱 QR Code Management**: Automatic QR code generation and management
+- **🏥 Health Monitoring**: Comprehensive health checks and status monitoring
+- **📚 Auto-Generated API Docs**: Swagger/OpenAPI documentation
+- **🔧 Robust Error Handling**: Automatic retry mechanisms and error recovery
+- **🐳 Docker Support**: Containerized deployment ready
 
-## Prerequisites
+## 🚀 Quick Start
+
+### Prerequisites
 
 - Node.js 18+ 
-- npm or yarn
-- Chromium browser (for WhatsApp Web.js)
+- MongoDB instance
+- Chromium browser (for WhatsApp Web)
 
-## Installation
+### Installation
 
-1. **Clone the repository**:
+1. **Clone the repository**
    ```bash
    git clone <repository-url>
    cd entrlab-wa
    ```
 
-2. **Install dependencies**:
+2. **Install dependencies**
    ```bash
    npm install
    ```
 
-3. **Install TypeScript dependencies**:
-   ```bash
-   npm install -D typescript ts-node @types/node @types/express @types/lokijs
-   ```
-
-4. **Create environment file**:
+3. **Configure environment variables**
    ```bash
    cp .env.example .env
+   # Edit .env with your configuration
    ```
 
-## Environment Variables
+4. **Build and start**
+   ```bash
+   npm run build
+   npm start
+   ```
+
+## 🔧 Configuration
+
+### Environment Variables
 
 Create a `.env` file with the following variables:
 
 ```env
-# Application
-NODE_ENV=development
-PORT=3000
+# MongoDB Configuration
+MONGODB_URI=mongodb://localhost:27017/whatsapp-bot
+
+# AI API Configuration
+FW_ENDPOINT=https://your-ai-api.com/api/agents/yourAgent/generate
+JWT_SECRET=your-jwt-secret-key
+AI_AGENT=your-agent-name
+
+# WhatsApp Configuration
+CHROMIUM_PATH=/usr/bin/chromium-browser
 M_WAITING_TIME=30000
 
-# Chromium
-CHROMIUM_PATH=/usr/bin/chromium
-
-# Development Whitelist
-WHITELISTED_NUMBERS=1234567890,9876543210
-
-# AI Configuration
-AI_AGENT=FW  # or ALI
-
-# AliWF Configuration
-ALIWF_SCOPE_API_KEY=your_api_key_here
-ALIWF_APP_ID=your_app_id_here
-
-# FW Configuration
-FW_ENDPOINT=https://your-fw-endpoint.com/api
+# Server Configuration
+PORT=3003
+NODE_ENV=production
 ```
 
-## Development
+### Required Environment Variables
 
-### Running in Development Mode
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `MONGODB_URI` | MongoDB connection string | `mongodb://localhost:27017/whatsapp-bot` |
+| `FW_ENDPOINT` | AI API endpoint URL | `https://api.example.com/generate` |
+| `JWT_SECRET` | JWT signing secret | `your-secret-key` |
+| `AI_AGENT` | AI agent identifier | `your-agent-name` |
+
+## 📚 API Documentation
+
+Once the server is running, access the interactive API documentation at:
+
+**🔗 [http://localhost:3003/documentation](http://localhost:3003/documentation)**
+
+### API Endpoints Overview
+
+#### 🚀 Client Management
+- `POST /api/whatsapp/clients` - Create new WhatsApp client
+- `GET /api/whatsapp/clients` - List all clients
+- `GET /api/whatsapp/clients/{clientId}` - Get client status
+- `DELETE /api/whatsapp/clients/{clientId}` - Disconnect client
+- `POST /api/whatsapp/clients/{clientId}/recover` - Recover failed client
+
+#### 📱 QR Code Management
+- `GET /api/whatsapp/clients/{clientId}/qr` - Get QR code data
+- `GET /api/whatsapp/clients/{clientId}/qr-image` - Get QR code as PNG
+- `POST /api/whatsapp/clients/{clientId}/refresh-qr` - Refresh QR code
+
+#### 💬 Message Operations
+- `POST /api/whatsapp/clients/{clientId}/send` - Send message
+
+#### 🏥 Health & Status
+- `GET /health` - System health check
+- `GET /api/whatsapp/health` - WhatsApp service health
+
+#### 🧪 Testing & Debugging
+- `POST /api/test-ai-api` - Test AI API integration
+- `GET /api/mongodb/status` - MongoDB connection status
+- `GET /api/mongodb/debug` - MongoDB debug information
+
+## 🔄 Usage Examples
+
+### 1. Create a New WhatsApp Client
 
 ```bash
-# Run with ts-node (no build required)
-npm run dev
-
-# Or build and run
-npm run build
-npm start
+curl -X POST http://localhost:3003/api/whatsapp/clients \
+  -H "Content-Type: application/json" \
+  -d '{"clientId": "my-whatsapp-client"}'
 ```
 
-### Building for Production
+### 2. Get Client Status
 
 ```bash
-# Build TypeScript to JavaScript
-npm run build
-
-# Run the built version
-npm start
+curl http://localhost:3003/api/whatsapp/clients/my-whatsapp-client
 ```
 
-### Watch Mode (Development)
+### 3. Get QR Code for Authentication
 
 ```bash
-# Watch for changes and rebuild
-npm run watch
+curl http://localhost:3003/api/whatsapp/clients/my-whatsapp-client/qr-image
 ```
 
-## Usage
-
-### Starting the Bot
-
-1. **Run the application**:
-   ```bash
-   npm run dev
-   ```
-
-2. **Scan QR Code**: The bot will display a QR code in the terminal. Scan it with WhatsApp Web.
-
-3. **Bot is Ready**: Once authenticated, the bot will start processing messages.
-
-## API Endpoints
-
-### Health Check
-- `GET /health` - Check if the server is running
-
-### QR Code Management
-- `GET /qr` - Get the current QR code for WhatsApp authentication
-- `GET /qr/status` - Check QR code availability and authentication status
-
-### Bot Status
-- `GET /bot/status` - Get bot status, phone number, and authentication state
-
-### Message Sending
-- `POST /greetings` - Send a message to a specific number (for initial greetings)
-
-#### Example Usage
+### 4. Send a Message
 
 ```bash
-# Get QR code
-curl http://localhost:3000/qr
-
-# Check QR status
-curl http://localhost:3000/qr/status
-
-# Check bot status
-curl http://localhost:3000/bot/status
-
-# Send greeting message
-curl -X POST http://localhost:3000/greetings \
+curl -X POST http://localhost:3003/api/whatsapp/clients/my-whatsapp-client/send \
   -H "Content-Type: application/json" \
   -d '{
-    "sender": "1234567890",
-    "message": "Hello!",
-    "campaign": "welcome"
+    "number": "6282121547121",
+    "message": "Hello from WhatsApp Bot!"
   }'
 ```
 
-## Message Processing Logic
+### 5. Check System Health
 
-### Message Queuing System
-
-The bot implements a sophisticated message queuing system:
-
-1. **First Message**: When a user sends a message, it's marked as "being processed" and a 30-second timer starts
-2. **Subsequent Messages**: If the same user sends more messages during the 30-second window, they're added to a queue
-3. **Batch Processing**: After 30 seconds, all queued messages are processed together as one conversation
-4. **AI Response**: Only one AI call is made per user per 30-second window
-
-### Benefits
-
-- **Reduced API Calls**: Only one AI inference call per user per 30 seconds
-- **Better User Experience**: Multiple messages are treated as one conversation
-- **Memory Efficient**: Proper cleanup prevents memory leaks
-- **Scalable**: Can handle multiple users simultaneously without conflicts
-
-## TypeScript Features
-
-### Type Safety
-
-- **Strict Type Checking**: All variables and functions are properly typed
-- **Interface Definitions**: Clear contracts for data structures
-- **Error Handling**: Type-safe error handling throughout the application
-
-### Key Interfaces
-
-```typescript
-// AI Agent Response
-interface AIAgentResponse {
-  text: string;
-  session: string | null;
-}
-
-// Message Queue
-interface MessageQueue {
-  [key: string]: QueuedMessage[];
-}
-
-// Database Entry
-interface NumberEntry {
-  number: string;
-  campaign?: string;
-  session?: string;
-}
+```bash
+curl http://localhost:3003/health
 ```
 
-## Project Structure
+## 🏗️ Architecture
+
+### Project Structure
 
 ```
 src/
-├── index.ts          # Main application file
-├── types.ts          # TypeScript type definitions
-└── ...
-
-dist/                 # Compiled JavaScript (after build)
-├── index.js
-└── types.js
-
-package.json          # Dependencies and scripts
-tsconfig.json         # TypeScript configuration
-README.md            # This file
+├── controllers/          # API controllers
+│   ├── whatsapp.controller.ts
+│   └── api.controller.ts
+├── services/            # Business logic services
+│   └── whatsapp.service.ts
+├── routes/              # Express routes
+│   ├── whatsapp.routes.ts
+│   └── api.routes.ts
+├── core/                # Core functionality
+│   └── message-handler.ts
+├── config/              # Configuration files
+│   └── swagger.ts
+├── types.ts             # TypeScript type definitions
+├── client-manager.ts    # WhatsApp client management
+├── app.ts               # Express application setup
+└── index.ts             # Application entry point
 ```
 
-## Scripts
+### Key Components
 
-- `npm run build` - Compile TypeScript to JavaScript
-- `npm run start` - Run the compiled JavaScript in production
-- `npm run dev` - Run the TypeScript source directly in development (with cleanup)
-- `npm run dev:clean` - Clean startup with session preservation (recommended for development)
-- `npm run dev:preserve` - Start without any cleanup (preserves session completely)
-- `npm run watch` - Watch for TypeScript changes and recompile automatically
-- `npm run restart` - Stop, clean up, and restart the bot
+- **ClientManager**: Manages WhatsApp client lifecycle and session persistence
+- **WhatsAppService**: Business logic for client operations
+- **MessageHandler**: Handles incoming messages and AI integration
+- **Controllers**: Handle HTTP requests and responses
+- **Routes**: Define API endpoints and middleware
 
-### Development Startup Options
+## 🔐 Session Management
 
-**For normal development (preserves session):**
+The bot uses MongoDB for session persistence with the following features:
+
+- **Automatic Session Restoration**: Sessions are automatically restored on server restart
+- **Multi-Client Support**: Each client has its own isolated session
+- **Session Cleanup**: Automatic cleanup of corrupted or expired sessions
+- **Health Monitoring**: Continuous monitoring of session health
+
+### Session Storage
+
+Sessions are stored in MongoDB using GridFS with the following collections:
+- `whatsapp-RemoteAuth-{clientId}.files`
+- `whatsapp-RemoteAuth-{clientId}.chunks`
+
+## 🤖 AI Integration
+
+The bot integrates with external AI APIs for intelligent message responses:
+
+- **JWT Authentication**: Secure API communication
+- **Message Formatting**: Automatic conversion of AI responses to WhatsApp format
+- **Error Handling**: Robust error handling and fallback responses
+- **Rate Limiting**: Built-in rate limiting and message queuing
+
+## 🐳 Docker Deployment
+
+### Build Docker Image
+
 ```bash
-npm run dev:clean
+docker build -t whatsapp-bot .
 ```
 
-**For completely fresh start (removes session):**
+### Run with Docker
+
 ```bash
-npm run dev
+docker run -d \
+  --name whatsapp-bot \
+  -p 3003:3003 \
+  -e MONGODB_URI=mongodb://host.docker.internal:27017/whatsapp-bot \
+  -e FW_ENDPOINT=https://your-ai-api.com/generate \
+  -e JWT_SECRET=your-secret \
+  whatsapp-bot
 ```
 
-**For preserving session completely (no cleanup):**
+### Docker Compose
+
+```yaml
+version: '3.8'
+services:
+  whatsapp-bot:
+    build: .
+    ports:
+      - "3003:3003"
+    environment:
+      - MONGODB_URI=mongodb://mongo:27017/whatsapp-bot
+      - FW_ENDPOINT=https://your-ai-api.com/generate
+      - JWT_SECRET=your-secret
+    depends_on:
+      - mongo
+
+  mongo:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+volumes:
+  mongo_data:
+```
+
+## 🔧 Development
+
+### Scripts
+
 ```bash
-npm run dev:preserve
+npm run build          # Build TypeScript to JavaScript
+npm start             # Start production server
+npm run dev           # Start development server with hot reload
+npm test              # Run tests
+npm run lint          # Run ESLint
 ```
 
-The `dev:clean` script preserves your WhatsApp session while still cleaning up processes and lock files.
+### Adding New Features
 
-## Error Handling
+1. **Controllers**: Add new endpoints in `src/controllers/`
+2. **Services**: Add business logic in `src/services/`
+3. **Routes**: Define routes in `src/routes/`
+4. **Types**: Add TypeScript types in `src/types.ts`
+5. **Documentation**: Update Swagger schemas in `src/config/swagger.ts`
 
-The bot includes comprehensive error handling:
-
-- **Graceful Shutdown**: Proper cleanup on SIGINT/SIGTERM
-- **Memory Leak Prevention**: Periodic cleanup of stale processing states
-- **Connection Recovery**: Automatic reconnection on disconnection
-- **Type Safety**: TypeScript prevents many runtime errors
-
-## Production Deployment
-
-### Docker
-
-```dockerfile
-FROM node:18-alpine
-
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production
-
-COPY dist/ ./dist/
-COPY .env ./
-
-EXPOSE 3000
-CMD ["npm", "start"]
-```
-
-### Railway/Heroku
-
-The bot is configured for Railway deployment with persistent storage:
-
-- Session data stored in `/data/.wwebjs_auth`
-- Database stored in persistent volume
-- Environment variables configured for production
-
-## Troubleshooting
+## 🚨 Troubleshooting
 
 ### Common Issues
 
-1. **Chromium not found**: Set `CHROMIUM_PATH` environment variable
-2. **QR Code not displaying**: Check terminal output and ensure proper display
-3. **Memory leaks**: Check if cleanup functions are working properly
-4. **Type errors**: Run `npm run build` to see compilation errors
+1. **Client Stuck in "initializing"**
+   - Check MongoDB connection
+   - Verify Chromium installation
+   - Check system resources
 
-### Debug Mode
+2. **Session Not Persisting**
+   - Verify MongoDB connection
+   - Check MongoDB permissions
+   - Review session cleanup logs
 
-Enable debug logging by setting:
+3. **AI API Errors**
+   - Verify `FW_ENDPOINT` configuration
+   - Check JWT secret configuration
+   - Review AI API response format
 
-```env
-NODE_ENV=development
-DEBUG=whatsapp-web.js:*
+4. **QR Code Not Generating**
+   - Check client status
+   - Verify Chromium installation
+   - Review client initialization logs
+
+### Debug Commands
+
+```bash
+# Check system health
+curl http://localhost:3003/health
+
+# Check MongoDB status
+curl http://localhost:3003/api/mongodb/status
+
+# Debug MongoDB collections
+curl http://localhost:3003/api/mongodb/debug
+
+# Test AI API
+curl -X POST http://localhost:3003/api/test-ai-api \
+  -H "Content-Type: application/json" \
+  -d '{"message": "test"}'
 ```
 
-## Contributing
+## 📊 Monitoring
+
+### Health Checks
+
+The API provides comprehensive health monitoring:
+
+- **System Health**: Overall system status
+- **Client Status**: Individual client health
+- **MongoDB Status**: Database connection status
+- **Memory Usage**: System resource monitoring
+
+### Logs
+
+The application provides detailed logging for:
+- Client lifecycle events
+- Message processing
+- Error handling
+- Session management
+- AI API interactions
+
+## 🤝 Contributing
 
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
 4. Add tests if applicable
-5. Submit a pull request
+5. Update documentation
+6. Submit a pull request
 
-## License
+## 📄 License
 
-ISC License - see LICENSE file for details. 
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🆘 Support
+
+For support and questions:
+
+- 📧 Email: support@example.com
+- 📚 Documentation: [http://localhost:3003/documentation](http://localhost:3003/documentation)
+- 🐛 Issues: [GitHub Issues](https://github.com/your-repo/issues)
+
+---
+
+**Made with ❤️ for WhatsApp automation**

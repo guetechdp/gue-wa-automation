@@ -4,7 +4,48 @@ import { WhatsAppService } from '../services/whatsapp.service';
 export class WhatsAppController {
     constructor(private whatsappService: WhatsAppService) {}
 
-    // Client Management
+    /**
+     * @swagger
+     * /api/whatsapp/clients:
+     *   post:
+     *     summary: Create a new WhatsApp client
+     *     description: Creates a new WhatsApp client with the specified client ID. The client will generate a QR code for authentication.
+     *     tags: [Client Management]
+     *     requestBody:
+     *       required: true
+     *       content:
+     *         application/json:
+     *           schema:
+     *             $ref: '#/components/schemas/CreateClientRequest'
+     *     responses:
+     *       201:
+     *         description: Client created successfully
+     *         content:
+     *           application/json:
+     *             schema:
+     *               type: object
+     *               properties:
+     *                 success:
+     *                   type: boolean
+     *                   example: true
+     *                 message:
+     *                   type: string
+     *                   example: "Client javear-account created successfully"
+     *                 client:
+     *                   $ref: '#/components/schemas/ClientInfo'
+     *       400:
+     *         description: Bad request - Client ID is required
+     *         content:
+     *           application/json:
+     *             schema:
+     *               $ref: '#/components/schemas/ErrorResponse'
+     *       500:
+     *         description: Internal server error
+     *         content:
+     *           application/json:
+     *             schema:
+     *               $ref: '#/components/schemas/ErrorResponse'
+     */
     async createClient(req: Request, res: Response) {
         try {
             const { clientId } = req.body;
@@ -43,6 +84,35 @@ export class WhatsAppController {
         }
     }
 
+    /**
+     * @swagger
+     * /api/whatsapp/clients:
+     *   get:
+     *     summary: Get all WhatsApp clients
+     *     description: Retrieves a list of all WhatsApp clients and their current status
+     *     tags: [Client Management]
+     *     responses:
+     *       200:
+     *         description: List of clients retrieved successfully
+     *         content:
+     *           application/json:
+     *             schema:
+     *               type: object
+     *               properties:
+     *                 success:
+     *                   type: boolean
+     *                   example: true
+     *                 clients:
+     *                   type: array
+     *                   items:
+     *                     $ref: '#/components/schemas/ClientInfo'
+     *       500:
+     *         description: Internal server error
+     *         content:
+     *           application/json:
+     *             schema:
+     *               $ref: '#/components/schemas/ErrorResponse'
+     */
     async getAllClients(req: Request, res: Response) {
         try {
             const clients = this.whatsappService.getAllClients();
@@ -72,6 +142,87 @@ export class WhatsAppController {
         }
     }
 
+    /**
+     * @swagger
+     * /api/whatsapp/clients/{clientId}:
+     *   get:
+     *     summary: Get client status
+     *     description: Retrieves the current status and information for a specific WhatsApp client
+     *     tags: [Client Management]
+     *     parameters:
+     *       - in: path
+     *         name: clientId
+     *         required: true
+     *         schema:
+     *           type: string
+     *         description: The unique identifier of the WhatsApp client
+     *         example: "javear-account"
+     *     responses:
+     *       200:
+     *         description: Client status retrieved successfully
+     *         content:
+     *           application/json:
+     *             schema:
+     *               type: object
+     *               properties:
+     *                 success:
+     *                   type: boolean
+     *                   example: true
+     *                 client:
+     *                   $ref: '#/components/schemas/ClientInfo'
+     *       404:
+     *         description: Client not found
+     *         content:
+     *           application/json:
+     *             schema:
+     *               $ref: '#/components/schemas/ErrorResponse'
+     *       500:
+     *         description: Internal server error
+     *         content:
+     *           application/json:
+     *             schema:
+     *               $ref: '#/components/schemas/ErrorResponse'
+     */
+    /**
+     * @swagger
+     * /api/whatsapp/clients/{clientId}:
+     *   get:
+     *     summary: Get client status
+     *     description: Retrieves detailed status information for a specific WhatsApp client
+     *     tags: [Client Management]
+     *     parameters:
+     *       - in: path
+     *         name: clientId
+     *         required: true
+     *         schema:
+     *           type: string
+     *         description: The unique identifier of the WhatsApp client
+     *     responses:
+     *       200:
+     *         description: Client status retrieved successfully
+     *         content:
+     *           application/json:
+     *             schema:
+     *               type: object
+     *               properties:
+     *                 success:
+     *                   type: boolean
+     *                   example: true
+     *                 client:
+     *                   $ref: '#/components/schemas/ClientInfo'
+     *       404:
+     *         description: Client not found
+     *         content:
+     *           application/json:
+     *             schema:
+     *               $ref: '#/components/schemas/ErrorResponse'
+     *       500:
+     *         description: Internal server error
+     *         content:
+     *           application/json:
+     *             schema:
+     *               $ref: '#/components/schemas/ErrorResponse'
+     */
     async getClientStatus(req: Request, res: Response) {
         try {
             const { clientId } = req.params;
@@ -116,6 +267,40 @@ export class WhatsAppController {
         }
     }
 
+    /**
+     * @swagger
+     * /api/whatsapp/clients/{clientId}/disconnect:
+     *   post:
+     *     summary: Disconnect WhatsApp client
+     *     description: Disconnects a WhatsApp client from the system
+     *     tags: [Client Management]
+     *     parameters:
+     *       - in: path
+     *         name: clientId
+     *         required: true
+     *         schema:
+     *           type: string
+     *         description: The unique identifier of the WhatsApp client
+     *     responses:
+     *       200:
+     *         description: Client disconnected successfully
+     *         content:
+     *           application/json:
+     *             schema:
+     *               $ref: '#/components/schemas/SuccessResponse'
+     *       404:
+     *         description: Client not found
+     *         content:
+     *           application/json:
+     *             schema:
+     *               $ref: '#/components/schemas/ErrorResponse'
+     *       500:
+     *         description: Internal server error
+     *         content:
+     *           application/json:
+     *             schema:
+     *               $ref: '#/components/schemas/ErrorResponse'
+     */
     async disconnectClient(req: Request, res: Response) {
         try {
             const { clientId } = req.params;
@@ -226,6 +411,66 @@ export class WhatsAppController {
     }
 
     // Send Message
+    /**
+     * @swagger
+     * /api/whatsapp/clients/{clientId}/send:
+     *   post:
+     *     summary: Send a message via WhatsApp client
+     *     description: Sends a text message to a specific phone number using the specified WhatsApp client
+     *     tags: [Message Operations]
+     *     parameters:
+     *       - in: path
+     *         name: clientId
+     *         required: true
+     *         schema:
+     *           type: string
+     *         description: The unique identifier of the WhatsApp client
+     *         example: "javear-account"
+     *     requestBody:
+     *       required: true
+     *       content:
+     *         application/json:
+     *           schema:
+     *             $ref: '#/components/schemas/SendMessageRequest'
+     *     responses:
+     *       200:
+     *         description: Message sent successfully
+     *         content:
+     *           application/json:
+     *             schema:
+     *               type: object
+     *               properties:
+     *                 success:
+     *                   type: boolean
+     *                   example: true
+     *                 message:
+     *                   type: string
+     *                   example: "Message sent successfully"
+     *                 clientId:
+     *                   type: string
+     *                   example: "javear-account"
+     *                 to:
+     *                   type: string
+     *                   example: "6281234567890"
+     *       400:
+     *         description: Bad request - Missing required fields or client not ready
+     *         content:
+     *           application/json:
+     *             schema:
+     *               $ref: '#/components/schemas/ErrorResponse'
+     *       404:
+     *         description: Client not found
+     *         content:
+     *           application/json:
+     *             schema:
+     *               $ref: '#/components/schemas/ErrorResponse'
+     *       500:
+     *         description: Internal server error
+     *         content:
+     *           application/json:
+     *             schema:
+     *               $ref: '#/components/schemas/ErrorResponse'
+     */
     async sendMessage(req: Request, res: Response) {
         try {
             const { clientId } = req.params;
@@ -365,6 +610,42 @@ export class WhatsAppController {
     }
 
     // Get QR code as image (direct browser rendering)
+    /**
+     * @swagger
+     * /api/whatsapp/clients/{clientId}/qr-image:
+     *   get:
+     *     summary: Get QR code image
+     *     description: Retrieves the QR code as a PNG image for the specified WhatsApp client. Returns the image directly in the response.
+     *     tags: [QR Code Management]
+     *     parameters:
+     *       - in: path
+     *         name: clientId
+     *         required: true
+     *         schema:
+     *           type: string
+     *         description: The unique identifier of the WhatsApp client
+     *         example: "javear-account"
+     *     responses:
+     *       200:
+     *         description: QR code image returned successfully
+     *         content:
+     *           image/png:
+     *             schema:
+     *               type: string
+     *               format: binary
+     *       404:
+     *         description: Client not found or no QR code available
+     *         content:
+     *           application/json:
+     *             schema:
+     *               $ref: '#/components/schemas/ErrorResponse'
+     *       500:
+     *         description: Internal server error
+     *         content:
+     *           application/json:
+     *             schema:
+     *               $ref: '#/components/schemas/ErrorResponse'
+     */
     async getQRImage(req: Request, res: Response) {
         try {
             const { clientId } = req.params;
