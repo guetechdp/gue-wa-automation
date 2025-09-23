@@ -78,7 +78,13 @@ export class WhatsAppBotApp {
 
     private setupRoutes(): void {
         // Setup Swagger documentation with Monokai theme
-        const monokaiCSS = fs.readFileSync('public/css/theme-monokai.css', 'utf8');
+        let monokaiCSS = '';
+        try {
+            monokaiCSS = fs.readFileSync('public/css/theme-monokai.css', 'utf8');
+        } catch (error) {
+            console.warn('⚠️ Monokai CSS file not found, using default Swagger theme');
+        }
+        
         this.app.use('/documentation', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
             explorer: true,
             customCss: `
