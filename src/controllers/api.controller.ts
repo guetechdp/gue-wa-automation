@@ -3,7 +3,6 @@ import { WhatsAppService } from '../services/whatsapp.service';
 import { Environment } from '../types';
 import mongoose from 'mongoose';
 import axios from 'axios';
-import { SignJWT } from 'jose';
 
 export class ApiController {
     constructor(
@@ -287,6 +286,7 @@ export class ApiController {
                 ['sign', 'verify']
             );
 
+            const { SignJWT } = await import('jose');
             const jwt = await new SignJWT(jwtPayload)
                 .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
                 .sign(key);
