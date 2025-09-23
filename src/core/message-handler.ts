@@ -2,6 +2,7 @@ import { Message, Chat, MessageMedia } from 'whatsapp-web.js';
 import { WhatsAppService } from '../services/whatsapp.service';
 import { Environment, ChatMessage } from '../types';
 import axios from 'axios';
+import { getSignJWT } from '../utils/jose-import';
 
 export class MessageHandler {
     private messageQueue: { [senderNumber: string]: Array<{ message: Message; timestamp: number }> } = {};
@@ -641,7 +642,7 @@ export class MessageHandler {
     }
 
     private async signJWT(payload: any, secret: string): Promise<string> {
-        const { SignJWT } = await import('jose');
+        const SignJWT = await getSignJWT();
         
         const key = await crypto.subtle.importKey(
             'raw',

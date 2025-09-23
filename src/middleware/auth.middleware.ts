@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { Environment } from '../types';
+import { getJwtVerify } from '../utils/jose-import';
 
 export interface AuthenticatedRequest extends Request {
     user?: {
@@ -64,7 +65,7 @@ export class AuthMiddleware {
 
             // Verify JWT token
             try {
-                const { jwtVerify } = await import('jose');
+                const jwtVerify = await getJwtVerify();
                 const key = await this.getJWTKey();
                 const { payload } = await jwtVerify(token, key);
                 
@@ -74,7 +75,7 @@ export class AuthMiddleware {
                     ...payload
                 };
 
-                console.log(`🔐 Authenticated user: ${req.user.id}`);
+                console.log(`🔐 Authenticated user: ${req.user?.id}`);
                 next();
             } catch (jwtError) {
                 console.error('❌ JWT verification failed:', jwtError);
