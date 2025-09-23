@@ -1,4 +1,5 @@
 import { Environment } from '../types';
+import { getSignJWT } from './jose-import';
 
 export class JWTGenerator {
     private jwtSecret: string;
@@ -21,7 +22,7 @@ export class JWTGenerator {
             ...payload
         };
 
-        const { SignJWT } = await import('jose');
+        const SignJWT = await getSignJWT();
         const key = await this.getJWTKey();
         
         const jwt = await new SignJWT(defaultPayload)
