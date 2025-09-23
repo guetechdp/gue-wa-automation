@@ -542,18 +542,11 @@ export class MessageHandler {
                 return { text: "Please connect to an agent" };
             }
 
-            console.log(`🤖 Using agent code: ${clientInfo.ai_agent_code} for client ${clientId}`);
-
             let url = this.env.FW_ENDPOINT || 'http://localhost:3000/api/agents/generalAssistanceAgent/generate/vnext';
             // Ensure URL has protocol
             if (!url.startsWith('http://') && !url.startsWith('https://')) {
                 url = 'https://' + url;
             }
-            console.log('🤖 Using AI endpoint URL:', url);
-            console.log('🤖 Environment variables:', {
-                FW_ENDPOINT: this.env.FW_ENDPOINT || 'NOT SET',
-                JWT_SECRET: this.env.JWT_SECRET ? 'SET' : 'NOT SET'
-            });
             const jwtSecret = this.env.JWT_SECRET || 'your-jwt-secret-key';
             
             // Generate JWT token dynamically
@@ -594,12 +587,7 @@ export class MessageHandler {
                 resourceId: formattedPhoneNumber
             };
 
-            console.log('🤖 Sending to AI API:', {
-                url,
-                threadId: formattedPhoneNumber,
-                resourceId: formattedPhoneNumber,
-                messageCount: requestBody.messages.length
-            });
+            console.log(`🤖 Request URL: ${url}`);
 
             const response = await axios.post(url, requestBody, {
                 headers: {
@@ -608,8 +596,7 @@ export class MessageHandler {
                 }
             });
 
-            console.log('🤖 AI API Response Status:', response.status);
-            console.log('🤖 AI API Response Data:', JSON.stringify(response.data, null, 2));
+            console.log(`🤖 Response Status: ${response.status} ${response.status >= 200 && response.status < 300 ? '✅' : '❌'}`);
 
             const rsp = response.data;
             const jsonData = {
