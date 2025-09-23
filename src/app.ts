@@ -121,6 +121,7 @@ export class WhatsAppBotApp {
             await this.whatsappService.restoreExistingSessions();
             console.log('✅ Existing sessions restored');
             
+            
             console.log('🚀 WhatsApp Bot API ready - existing sessions restored, new clients can be created via API endpoints');
             
         } catch (error) {

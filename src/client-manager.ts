@@ -3,6 +3,7 @@ import { MongoStore } from 'wwebjs-mongo';
 import mongoose from 'mongoose';
 import * as qrcode from 'qrcode-terminal';
 import * as QRCode from 'qrcode';
+// import { ClientAgent } from '../models/client-agent.model';
 
 export interface ClientInfo {
     clientId: string;
@@ -12,6 +13,7 @@ export interface ClientInfo {
     qrCode?: string | undefined;
     lastActivity: Date;
     status: 'initializing' | 'qr_required' | 'authenticated' | 'ready' | 'disconnected' | 'error' | 'session_saved';
+    ai_agent_code?: string | undefined;
 }
 
 export interface ClientManagerConfig {
@@ -402,6 +404,23 @@ export class WhatsAppClientManager {
             clientInfo.lastActivity = new Date();
             console.log(`📞 Client ${clientId} phone number: ${clientInfo.phoneNumber}`);
             
+            // Manually trigger session save after a short delay
+            setTimeout(async () => {
+                try {
+                    console.log(`💾 Manually triggering session save for client ${clientId}...`);
+                    // Force save the session using RemoteAuth
+                    const authStrategy = (client as any).authStrategy;
+                    if (authStrategy && typeof authStrategy.save === 'function') {
+                        await authStrategy.save();
+                        console.log(`✅ Manual session save completed for client ${clientId}`);
+                    } else {
+                        console.log(`⚠️ No save method available on auth strategy for client ${clientId}`);
+                    }
+                } catch (error) {
+                    console.error(`❌ Error manually saving session for client ${clientId}:`, error);
+                }
+            }, 5000); // 5 seconds delay
+            
             // Set a timeout to check if session gets saved (fallback mechanism)
             setTimeout(() => {
                 if (clientInfo.status === 'ready') {
@@ -445,6 +464,20 @@ export class WhatsAppClientManager {
             console.log(`📨 Message body:`, message.body);
             
             clientInfo.lastActivity = new Date();
+            
+            // Trigger session save on first message if not already saved
+            if (clientInfo.status === 'ready') {
+                try {
+                    console.log(`💾 Triggering session save on first message for client ${clientId}...`);
+                    const authStrategy = (client as any).authStrategy;
+                    if (authStrategy && typeof authStrategy.save === 'function') {
+                        await authStrategy.save();
+                        console.log(`✅ Session save triggered on message for client ${clientId}`);
+                    }
+                } catch (error) {
+                    console.error(`❌ Error saving session on message for client ${clientId}:`, error);
+                }
+            }
             
             // Call all registered message handlers
             for (const handler of this.messageHandlers) {
@@ -701,6 +734,40 @@ export class WhatsAppClientManager {
         }
     }
 
+    public async loadAgentAssignments(): Promise<void> {
+        try {
+            console.log('🔄 Starting to load agent assignments...');
+            
+            // Get the ClientAgent model (it should already be compiled by the service)
+            let ClientAgent: any;
+            try {
+                ClientAgent = mongoose.model('ClientAgent');
+                console.log('✅ ClientAgent model found');
+            } catch (error) {
+                console.log('⚠️ ClientAgent model not found, skipping agent assignment loading:', error);
+                return;
+            }
+            
+            const assignments = await ClientAgent.find({ isActive: true });
+            console.log(`📋 Found ${assignments.length} agent assignments in MongoDB:`, assignments);
+            
+            for (const assignment of assignments) {
+                const clientInfo = this.clients.get(assignment.clientId);
+                console.log(`🔍 Looking for client ${assignment.clientId} in clients map:`, !!clientInfo);
+                if (clientInfo) {
+                    clientInfo.ai_agent_code = assignment.ai_agent_code;
+                    console.log(`🤖 Loaded agent assignment for client ${assignment.clientId}: ${assignment.ai_agent_code}`);
+                } else {
+                    console.log(`⚠️ Client ${assignment.clientId} not found in clients map`);
+                }
+            }
+            
+            console.log(`✅ Loaded ${assignments.length} agent assignments from MongoDB`);
+        } catch (error) {
+            console.error('❌ Error loading agent assignments:', error);
+        }
+    }
+
     public async restoreExistingSessions(): Promise<void> {
         if (!this.isMongoConnected || !this.mongoStore) {
             console.log('⚠️ MongoDB not connected, skipping session restoration');
@@ -779,6 +846,11 @@ export class WhatsAppClientManager {
             });
             
             console.log('✅ Session restoration completed');
+            
+            // Load agent assignments after a delay to ensure all clients are fully ready
+            setTimeout(async () => {
+                await this.loadAgentAssignments();
+            }, 5000); // 5 seconds delay
         } catch (error) {
             console.error('❌ Error during session restoration:', error);
         }

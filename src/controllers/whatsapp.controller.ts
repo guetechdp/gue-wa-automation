@@ -124,7 +124,8 @@ export class WhatsAppController {
                 isReady: client.isReady,
                 phoneNumber: client.phoneNumber,
                 hasQrCode: !!client.qrCode,
-                lastActivity: client.lastActivity ? client.lastActivity.toISOString() : null
+                lastActivity: client.lastActivity ? client.lastActivity.toISOString() : null,
+                ai_agent_code: client.ai_agent_code || null
             }));
             
             return res.status(200).json({
@@ -250,7 +251,8 @@ export class WhatsAppController {
                 phoneNumber: clientInfo.phoneNumber,
                 hasQrCode: !!clientInfo.qrCode,
                 qrCode: clientInfo.qrCode || null,
-                lastActivity: clientInfo.lastActivity ? clientInfo.lastActivity.toISOString() : null
+                lastActivity: clientInfo.lastActivity ? clientInfo.lastActivity.toISOString() : null,
+                ai_agent_code: clientInfo.ai_agent_code || null
             };
             
             return res.status(200).json({
@@ -735,6 +737,358 @@ export class WhatsAppController {
             
         } catch (error) {
             console.error('❌ Error getting health status:', error);
+            return res.status(500).json({
+                success: false,
+                error: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    }
+
+    // Client-Agent Assignment Management
+    /**
+     * @swagger
+     * /api/whatsapp/clients/{clientId}/agent:
+     *   put:
+     *     summary: Assign or update agent for client
+     *     description: Assigns an AI agent code to a WhatsApp client. The client must be in 'ready' status to assign an agent.
+     *     tags: [Client Management]
+     *     parameters:
+     *       - in: path
+     *         name: clientId
+     *         required: true
+     *         schema:
+     *           type: string
+     *         description: The unique identifier of the WhatsApp client
+     *         example: "javear-account"
+     *     requestBody:
+     *       required: true
+     *       content:
+     *         application/json:
+     *           schema:
+     *             type: object
+     *             required:
+     *               - ai_agent_code
+     *             properties:
+     *               ai_agent_code:
+     *                 type: string
+     *                 description: The AI agent code to assign to the client
+     *                 example: "FW001"
+     *     responses:
+     *       200:
+     *         description: Agent assigned successfully
+     *         content:
+     *           application/json:
+     *             schema:
+     *               type: object
+     *               properties:
+     *                 success:
+     *                   type: boolean
+     *                   example: true
+     *                 message:
+     *                   type: string
+     *                   example: "Agent code assigned to client javear-account"
+     *                 assignment:
+     *                   type: object
+     *                   properties:
+     *                     clientId:
+     *                       type: string
+     *                       example: "javear-account"
+     *                     ai_agent_code:
+     *                       type: string
+     *                       example: "FW001"
+     *                     assignedAt:
+     *                       type: string
+     *                       format: date-time
+     *                     updatedAt:
+     *                       type: string
+     *                       format: date-time
+     *       400:
+     *         description: Bad request - Client not ready or missing agent code
+     *         content:
+     *           application/json:
+     *             schema:
+     *               $ref: '#/components/schemas/ErrorResponse'
+     *       404:
+     *         description: Client not found
+     *         content:
+     *           application/json:
+     *             schema:
+     *               $ref: '#/components/schemas/ErrorResponse'
+     *       500:
+     *         description: Internal server error
+     *         content:
+     *           application/json:
+     *             schema:
+     *               $ref: '#/components/schemas/ErrorResponse'
+     */
+    async updateClientAgent(req: Request, res: Response) {
+        try {
+            const { clientId } = req.params;
+            const { ai_agent_code } = req.body;
+            
+            if (!clientId) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Client ID is required'
+                });
+            }
+
+            if (!ai_agent_code) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'ai_agent_code is required'
+                });
+            }
+
+            const result = await this.whatsappService.assignAgentToClient(clientId, ai_agent_code);
+            
+            if (!result.success) {
+                return res.status(400).json({
+                    success: false,
+                    error: result.message
+                });
+            }
+            
+            return res.status(200).json({
+                success: true,
+                message: result.message,
+                assignment: result.assignment
+            });
+            
+        } catch (error) {
+            console.error('❌ Error updating client agent:', error);
+            return res.status(500).json({
+                success: false,
+                error: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    }
+
+    /**
+     * @swagger
+     * /api/whatsapp/clients/{clientId}/agent:
+     *   delete:
+     *     summary: Remove agent from client
+     *     description: Removes the AI agent assignment from a WhatsApp client
+     *     tags: [Client Management]
+     *     parameters:
+     *       - in: path
+     *         name: clientId
+     *         required: true
+     *         schema:
+     *           type: string
+     *         description: The unique identifier of the WhatsApp client
+     *         example: "javear-account"
+     *     responses:
+     *       200:
+     *         description: Agent removed successfully
+     *         content:
+     *           application/json:
+     *             schema:
+     *               type: object
+     *               properties:
+     *                 success:
+     *                   type: boolean
+     *                   example: true
+     *                 message:
+     *                   type: string
+     *                   example: "Agent assignment removed from client javear-account"
+     *       400:
+     *         description: Bad request - No agent assignment found
+     *         content:
+     *           application/json:
+     *             schema:
+     *               $ref: '#/components/schemas/ErrorResponse'
+     *       404:
+     *         description: Client not found
+     *         content:
+     *           application/json:
+     *             schema:
+     *               $ref: '#/components/schemas/ErrorResponse'
+     *       500:
+     *         description: Internal server error
+     *         content:
+     *           application/json:
+     *             schema:
+     *               $ref: '#/components/schemas/ErrorResponse'
+     */
+    async removeClientAgent(req: Request, res: Response) {
+        try {
+            const { clientId } = req.params;
+            
+            if (!clientId) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Client ID is required'
+                });
+            }
+
+            const result = await this.whatsappService.removeAgentFromClient(clientId);
+            
+            if (!result.success) {
+                return res.status(400).json({
+                    success: false,
+                    error: result.message
+                });
+            }
+            
+            return res.status(200).json({
+                success: true,
+                message: result.message
+            });
+            
+        } catch (error) {
+            console.error('❌ Error removing client agent:', error);
+            return res.status(500).json({
+                success: false,
+                error: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    }
+
+    /**
+     * @swagger
+     * /api/whatsapp/clients/{clientId}/agent:
+     *   get:
+     *     summary: Get client agent assignment
+     *     description: Retrieves the AI agent assignment for a specific WhatsApp client
+     *     tags: [Client Management]
+     *     parameters:
+     *       - in: path
+     *         name: clientId
+     *         required: true
+     *         schema:
+     *           type: string
+     *         description: The unique identifier of the WhatsApp client
+     *         example: "javear-account"
+     *     responses:
+     *       200:
+     *         description: Agent assignment retrieved successfully
+     *         content:
+     *           application/json:
+     *             schema:
+     *               type: object
+     *               properties:
+     *                 success:
+     *                   type: boolean
+     *                   example: true
+     *                 assignment:
+     *                   type: object
+     *                   properties:
+     *                     clientId:
+     *                       type: string
+     *                       example: "javear-account"
+     *                     ai_agent_code:
+     *                       type: string
+     *                       example: "FW001"
+     *                     assignedAt:
+     *                       type: string
+     *                       format: date-time
+     *                     updatedAt:
+     *                       type: string
+     *                       format: date-time
+     *                 message:
+     *                   type: string
+     *                   example: "No active agent assignment found for client javear-account"
+     *       404:
+     *         description: Client not found
+     *         content:
+     *           application/json:
+     *             schema:
+     *               $ref: '#/components/schemas/ErrorResponse'
+     *       500:
+     *         description: Internal server error
+     *         content:
+     *           application/json:
+     *             schema:
+     *               $ref: '#/components/schemas/ErrorResponse'
+     */
+    async getClientAgent(req: Request, res: Response) {
+        try {
+            const { clientId } = req.params;
+            
+            if (!clientId) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Client ID is required'
+                });
+            }
+
+            const result = await this.whatsappService.getClientAgentAssignment(clientId);
+            
+            return res.status(200).json({
+                success: true,
+                assignment: result.assignment,
+                message: result.message
+            });
+            
+        } catch (error) {
+            console.error('❌ Error getting client agent:', error);
+            return res.status(500).json({
+                success: false,
+                error: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    }
+
+    /**
+     * @swagger
+     * /api/whatsapp/agents:
+     *   get:
+     *     summary: Get all agent assignments
+     *     description: Retrieves all active AI agent assignments across all WhatsApp clients
+     *     tags: [Client Management]
+     *     responses:
+     *       200:
+     *         description: Agent assignments retrieved successfully
+     *         content:
+     *           application/json:
+     *             schema:
+     *               type: object
+     *               properties:
+     *                 success:
+     *                   type: boolean
+     *                   example: true
+     *                 assignments:
+     *                   type: array
+     *                   items:
+     *                     type: object
+     *                     properties:
+     *                       clientId:
+     *                         type: string
+     *                         example: "javear-account"
+     *                       ai_agent_code:
+     *                         type: string
+     *                         example: "FW001"
+     *                       assignedAt:
+     *                         type: string
+     *                         format: date-time
+     *                       updatedAt:
+     *                         type: string
+     *                         format: date-time
+     *                 total:
+     *                   type: number
+     *                   example: 1
+     *       500:
+     *         description: Internal server error
+     *         content:
+     *           application/json:
+     *             schema:
+     *               $ref: '#/components/schemas/ErrorResponse'
+     */
+    async getAllAgentAssignments(req: Request, res: Response) {
+        try {
+            const result = await this.whatsappService.getAllAgentAssignments();
+            
+            return res.status(200).json({
+                success: true,
+                assignments: result.assignments,
+                total: result.assignments.length,
+                message: result.message
+            });
+            
+        } catch (error) {
+            console.error('❌ Error getting all agent assignments:', error);
             return res.status(500).json({
                 success: false,
                 error: error instanceof Error ? error.message : 'Unknown error'

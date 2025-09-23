@@ -135,6 +135,12 @@ const swaggerDefinition: SwaggerDefinition = {
             type: 'string',
             format: 'date-time',
             example: '2025-09-22T07:49:22.461Z'
+          },
+          ai_agent_code: {
+            type: 'string',
+            nullable: true,
+            example: 'FW001',
+            description: 'The AI agent code assigned to this client'
           }
         }
       },
@@ -322,6 +328,40 @@ const swaggerDefinition: SwaggerDefinition = {
             type: 'string',
             format: 'date-time',
             example: '2025-09-22T07:49:22.461Z'
+          }
+        }
+      },
+      AgentAssignment: {
+        type: 'object',
+        properties: {
+          clientId: {
+            type: 'string',
+            example: 'javear-account'
+          },
+          ai_agent_code: {
+            type: 'string',
+            example: 'FW001'
+          },
+          assignedAt: {
+            type: 'string',
+            format: 'date-time',
+            example: '2025-09-22T07:49:22.461Z'
+          },
+          updatedAt: {
+            type: 'string',
+            format: 'date-time',
+            example: '2025-09-22T07:49:22.461Z'
+          }
+        }
+      },
+      AssignAgentRequest: {
+        type: 'object',
+        required: ['ai_agent_code'],
+        properties: {
+          ai_agent_code: {
+            type: 'string',
+            example: 'FW001',
+            description: 'The AI agent code to assign to the client'
           }
         }
       }

@@ -15,6 +15,12 @@ export function createWhatsAppRoutes(whatsappController: WhatsAppController): Ro
     router.delete('/clients/:clientId', (req, res) => whatsappController.removeClient(req, res));
     router.post('/clients/:clientId/recover', (req, res) => whatsappController.recoverClient(req, res));
     router.post('/clients/:clientId/reset-to-qr', (req, res) => whatsappController.resetToQRScanning(req, res));
+    
+    // Client-Agent Assignment routes
+    router.put('/clients/:clientId/agent', (req, res) => whatsappController.updateClientAgent(req, res));
+    router.delete('/clients/:clientId/agent', (req, res) => whatsappController.removeClientAgent(req, res));
+    router.get('/clients/:clientId/agent', (req, res) => whatsappController.getClientAgent(req, res));
+    
     router.get('/clients/:clientId', (req, res) => whatsappController.getClientStatus(req, res));
 
     // QR Code Management Routes
@@ -23,6 +29,9 @@ export function createWhatsAppRoutes(whatsappController: WhatsAppController): Ro
 
     // Health and Status Routes
     router.get('/health', (req, res) => whatsappController.getHealthStatus(req, res));
+
+    // Agent Assignment Routes
+    router.get('/agents', (req, res) => whatsappController.getAllAgentAssignments(req, res));
 
     return router;
 }
