@@ -1,5 +1,4 @@
 import { Request, Response, NextFunction } from 'express';
-import { jwtVerify } from 'jose';
 import { Environment } from '../types';
 
 export interface AuthenticatedRequest extends Request {
@@ -65,6 +64,7 @@ export class AuthMiddleware {
 
             // Verify JWT token
             try {
+                const { jwtVerify } = await import('jose');
                 const key = await this.getJWTKey();
                 const { payload } = await jwtVerify(token, key);
                 

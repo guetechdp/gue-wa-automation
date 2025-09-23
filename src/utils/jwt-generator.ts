@@ -1,4 +1,3 @@
-import { SignJWT } from 'jose';
 import { Environment } from '../types';
 
 export class JWTGenerator {
@@ -22,6 +21,7 @@ export class JWTGenerator {
             ...payload
         };
 
+        const { SignJWT } = await import('jose');
         const key = await this.getJWTKey();
         
         const jwt = await new SignJWT(defaultPayload)
