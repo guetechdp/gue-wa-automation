@@ -50,15 +50,9 @@ async function generateToken() {
         // Merge with custom payload
         const payload = { ...defaultPayload, ...customPayload };
 
-        // Generate JWT key using jose library
-        const jose = await import('jose');
-        const key = new TextEncoder().encode(jwtSecret);
-
-        // Generate token
-        const { SignJWT } = jose;
-        const token = await new SignJWT(payload)
-            .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
-            .sign(key);
+        // Generate token using jsonwebtoken
+        const jwt = require('jsonwebtoken');
+        const token = jwt.sign(payload, jwtSecret, { algorithm: 'HS256' });
 
         console.log('🔐 JWT Token Generated Successfully!');
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');

@@ -2,8 +2,7 @@ import { Message, Chat, MessageMedia } from 'whatsapp-web.js';
 import { WhatsAppService } from '../services/whatsapp.service';
 import { Environment, ChatMessage } from '../types';
 import axios from 'axios';
-import { getSignJWT, getJoseModule } from '../utils/jose-import';
-import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
 
 export class MessageHandler {
     private messageQueue: { [senderNumber: string]: Array<{ message: Message; timestamp: number }> } = {};
@@ -643,15 +642,7 @@ export class MessageHandler {
     }
 
     private async signJWT(payload: any, secret: string): Promise<string> {
-        const SignJWT = await getSignJWT();
-        const jose = await getJoseModule();
-        
-        // Convert secret to Uint8Array for jose library
-        const key = new TextEncoder().encode(secret);
-
-        return await new SignJWT(payload)
-            .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
-            .sign(key);
+        return jwt.sign(payload, secret, { algorithm: 'HS256' });
     }
 
     public cleanup(): void {
