@@ -11,7 +11,6 @@
  *   node scripts/generate-token.js --payload '{"sub":"user123","role":"admin"}'
  */
 
-const { SignJWT } = require('jose');
 require('dotenv/config');
 
 async function generateToken() {
@@ -61,6 +60,7 @@ async function generateToken() {
         );
 
         // Generate token
+        const { SignJWT } = await import('jose');
         const token = await new SignJWT(payload)
             .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
             .sign(key);
