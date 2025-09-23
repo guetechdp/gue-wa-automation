@@ -337,13 +337,8 @@ export class WhatsAppClientManager {
 
         // QR Code event
         client.on('qr', async (qr: string) => {
-            console.log(`🔐 QR Code generated for client ${clientId}:`);
-            qrcode.generate(qr, { small: true });
-            console.log(`📱 Scan this QR code with WhatsApp for client ${clientId}`);
-            
             try {
                 // Generate base64-encoded PNG QR code
-                console.log(`🔄 Generating QR code image for client ${clientId}...`);
                 const qrCodeImage = await QRCode.toDataURL(qr, {
                     type: 'image/png',
                     width: 256,
@@ -356,12 +351,10 @@ export class WhatsAppClientManager {
                 
                 // Store the base64 image (remove data:image/png;base64, prefix)
                 clientInfo.qrCode = qrCodeImage.split(',')[1];
-                console.log(`✅ QR code image generated successfully for client ${clientId}, length: ${clientInfo.qrCode?.length || 0}`);
             } catch (error) {
                 console.error(`❌ Error generating QR code image for client ${clientId}:`, error);
                 // Fallback to raw QR string
                 clientInfo.qrCode = qr;
-                console.log(`⚠️ Using raw QR string as fallback for client ${clientId}`);
             }
             
             clientInfo.status = 'qr_required';
