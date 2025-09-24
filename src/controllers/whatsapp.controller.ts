@@ -330,6 +330,56 @@ export class WhatsAppController {
         }
     }
 
+    /**
+     * @swagger
+     * /api/whatsapp/clients/{clientId}:
+     *   delete:
+     *     summary: Remove WhatsApp client completely
+     *     description: Permanently removes a WhatsApp client from the system. This will disconnect the client, remove it from memory, and delete all associated session data from MongoDB. This action cannot be undone.
+     *     tags: [Client Management]
+     *     parameters:
+     *       - in: path
+     *         name: clientId
+     *         required: true
+     *         schema:
+     *           type: string
+     *         description: The unique identifier of the WhatsApp client to remove
+     *         example: "my-whatsapp-client"
+     *     security:
+     *       - bearerAuth: []
+     *     responses:
+     *       200:
+     *         description: Client removed successfully
+     *         content:
+     *           application/json:
+     *             schema:
+     *               type: object
+     *               properties:
+     *                 success:
+     *                   type: boolean
+     *                   example: true
+     *                 message:
+     *                   type: string
+     *                   example: "Client my-whatsapp-client removed successfully"
+     *       400:
+     *         description: Bad request - Client ID is required
+     *         content:
+     *           application/json:
+     *             schema:
+     *               $ref: '#/components/schemas/ErrorResponse'
+     *       404:
+     *         description: Client not found
+     *         content:
+     *           application/json:
+     *             schema:
+     *               $ref: '#/components/schemas/ErrorResponse'
+     *       500:
+     *         description: Internal server error
+     *         content:
+     *           application/json:
+     *             schema:
+     *               $ref: '#/components/schemas/ErrorResponse'
+     */
     async removeClient(req: Request, res: Response) {
         try {
             const { clientId } = req.params;
