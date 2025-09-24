@@ -14,6 +14,8 @@ export interface Environment {
   AI_AGENT?: string | undefined;
   PORT?: string | undefined;
   MONGODB_URI?: string | undefined;
+  UPLOAD_USER_ID?: string | undefined;
+  UPLOAD_AUTH_TOKEN?: string | undefined;
 }
 
 // WhatsApp Service Configuration interface
