@@ -13,7 +13,9 @@ const env: Environment = {
     PORT: process.env.PORT || '8080',
     MONGODB_URI: process.env.MONGODB_URI || undefined,
     M_WAITING_TIME: process.env.M_WAITING_TIME || '30000',
-    AI_AGENT: process.env.AI_AGENT || 'FW'
+    AI_AGENT: process.env.AI_AGENT || 'FW',
+    UPLOAD_USER_ID: process.env.UPLOAD_USER_ID || undefined,
+    UPLOAD_AUTH_TOKEN: process.env.UPLOAD_AUTH_TOKEN || undefined
 };
 
 // Validate required environment variables

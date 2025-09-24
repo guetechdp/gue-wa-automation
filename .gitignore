@@ -54,3 +54,6 @@ Thumbs.db
 .wwebjs_auth/
 .wwebjs_cache/
 data/
+
+# Temporary files for media uploads
+temp/

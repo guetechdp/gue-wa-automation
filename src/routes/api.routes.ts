@@ -6,6 +6,7 @@ export function createApiRoutes(apiController: ApiController): Router {
 
     // Health and Status Routes
     router.get('/health', (req, res) => apiController.healthCheck(req, res));
+    router.get('/debug-env', (req, res) => apiController.debugEnv(req, res));
 
     // Test Routes
     router.get('/test-client', (req, res) => apiController.testClient(req, res));

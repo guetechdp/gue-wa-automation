@@ -3,17 +3,142 @@ import { WhatsAppService } from '../services/whatsapp.service';
 import { Environment, ChatMessage } from '../types';
 import axios from 'axios';
 import jwt from 'jsonwebtoken';
+import fs from 'fs';
+import path from 'path';
+import { v4 as uuidv4 } from 'uuid';
+import FormData from 'form-data';
 
 export class MessageHandler {
-    private messageQueue: { [senderNumber: string]: Array<{ message: Message; enhancedText?: string; timestamp: number }> } = {};
+    private messageQueue: { [senderNumber: string]: Array<{ message: Message; enhancedText?: string; mediaUrls?: string[]; timestamp: number }> } = {};
     private processingUsers: { [senderNumber: string]: number } = {};
     private env: Environment;
+    private tempDir: string;
 
     constructor(
         private whatsappService: WhatsAppService,
         env: Environment
     ) {
         this.env = env;
+        this.tempDir = path.join(process.cwd(), 'temp');
+        
+        // Environment variables are loaded correctly
+        
+        // Ensure temp directory exists
+        if (!fs.existsSync(this.tempDir)) {
+            fs.mkdirSync(this.tempDir, { recursive: true });
+        }
+    }
+
+    private async handleMediaMessage(message: Message): Promise<string[]> {
+        const mediaUrls: string[] = [];
+        
+        if (!message.hasMedia) {
+            return mediaUrls;
+        }
+
+        try {
+            console.log('📎 Processing media attachment...');
+            const media = await message.downloadMedia();
+            
+            if (!media) {
+                console.log('⚠️ No media data received');
+                return mediaUrls;
+            }
+
+            // Generate unique filename with proper extension
+            const fileExtension = this.getFileExtensionFromMimeType(media.mimetype);
+            const filename = `${uuidv4()}${fileExtension}`;
+            const filePath = path.join(this.tempDir, filename);
+
+            // Save media to temporary file
+            const buffer = Buffer.from(media.data, 'base64');
+            fs.writeFileSync(filePath, buffer);
+            console.log(`📎 Media saved to: ${filePath}`);
+
+            // Upload to tmpfile.link (this method handles cleanup)
+            const uploadUrl = await this.uploadToTmpFile(filePath, filename, media.mimetype);
+            if (uploadUrl) {
+                mediaUrls.push(uploadUrl);
+                console.log(`📎 Media uploaded: ${uploadUrl}`);
+            }
+
+        } catch (error) {
+            console.error('❌ Error processing media:', error);
+        }
+
+        return mediaUrls;
+    }
+
+    private getFileExtensionFromMimeType(mimetype: string): string {
+        const mimeToExt: { [key: string]: string } = {
+            'image/jpeg': '.jpg',
+            'image/jpg': '.jpg',
+            'image/png': '.png',
+            'image/gif': '.gif',
+            'image/webp': '.webp',
+            'video/mp4': '.mp4',
+            'video/avi': '.avi',
+            'video/mov': '.mov',
+            'audio/mp3': '.mp3',
+            'audio/wav': '.wav',
+            'audio/ogg': '.ogg',
+            'application/pdf': '.pdf',
+            'application/msword': '.doc',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+            'application/vnd.ms-excel': '.xls',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+            'application/vnd.ms-powerpoint': '.ppt',
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
+            'text/plain': '.txt',
+            'application/zip': '.zip',
+            'application/x-rar-compressed': '.rar'
+        };
+
+        return mimeToExt[mimetype] || '.bin';
+    }
+
+    private async uploadToTmpFile(filePath: string, filename: string, mimetype: string): Promise<string | null> {
+        try {
+            console.log('📤 Uploading media to tmpfile.link...');
+
+            const formData = new FormData();
+            const fileStream = fs.createReadStream(filePath);
+            formData.append('file', fileStream, filename);
+
+            // Use tmpfile.link API without authentication (it works without auth)
+            const response = await axios.post('https://tmpfile.link/api/upload', formData, {
+                headers: {
+                    ...formData.getHeaders()
+                }
+            });
+
+            // Clean up temporary file after successful upload
+            try {
+                fs.unlinkSync(filePath);
+                console.log('🧹 Cleaned up temporary file:', filename);
+            } catch (cleanupError) {
+                console.warn('⚠️ Failed to clean up temporary file:', filename, cleanupError);
+            }
+
+            if (response.data && response.data.downloadLink) {
+                console.log('✅ Media uploaded successfully:', response.data.downloadLink);
+                return response.data.downloadLink;
+            }
+
+            return null;
+        } catch (error) {
+            console.error('❌ Error uploading to tmpfile.link:', error);
+            
+            // Clean up temporary file even if upload failed
+            try {
+                fs.unlinkSync(filePath);
+                console.log('🧹 Cleaned up temporary file after failed upload:', filename);
+            } catch (cleanupError) {
+                console.warn('⚠️ Failed to clean up temporary file after error:', filename, cleanupError);
+            }
+            
+            return null;
+        }
     }
 
     public async handleIncomingMessage(clientId: string, message: Message): Promise<void> {
@@ -34,6 +159,12 @@ export class MessageHandler {
                 console.error('❌ Error getting quoted message:', error);
                 // Continue with original message if quoted message retrieval fails
             }
+        }
+
+        // Process media attachments if present
+        let mediaUrls: string[] = [];
+        if (message.hasMedia) {
+            mediaUrls = await this.handleMediaMessage(message);
         }
         
         // Simple test - just reply to any message
@@ -66,18 +197,18 @@ export class MessageHandler {
         
         if (productionMode) {
             console.log("📨 Processing message in production mode");
-            await this.handleIncomingMessageWithQueue(clientId, senderNumber, message, enhancedMessage, 10000);
+            await this.handleIncomingMessageWithQueue(clientId, senderNumber, message, enhancedMessage, mediaUrls, 10000);
         } else {
             if (allowedNumbers.includes(senderNumber)) {
                 console.log(`📨 Message from ${senderNumber} ignored (whitelisted).`);
             } else {
                 console.log("📨 Processing message in development mode");
-                await this.handleIncomingMessageWithQueue(clientId, senderNumber, message, enhancedMessage, 10000);
+                await this.handleIncomingMessageWithQueue(clientId, senderNumber, message, enhancedMessage, mediaUrls, 10000);
             }
         }
     }
 
-    private async handleIncomingMessageWithQueue(clientId: string, sender: string, message: Message, enhancedMessage: string, delay: number = 10000): Promise<void> {
+    private async handleIncomingMessageWithQueue(clientId: string, sender: string, message: Message, enhancedMessage: string, mediaUrls: string[], delay: number = 10000): Promise<void> {
         console.log(`🔄 handleIncomingMessage called for ${sender} with delay ${delay}ms`);
         const senderNumber: string = sender;
         
@@ -98,6 +229,7 @@ export class MessageHandler {
         this.messageQueue[senderNumber].push({
             message,
             enhancedText: enhancedMessage,
+            mediaUrls: mediaUrls,
             timestamp: Date.now()
         });
     
@@ -121,7 +253,19 @@ export class MessageHandler {
                     
                     // Combine all queued messages into one string using enhanced text
                     const finalCombinedMessages = queuedMessages
-                        .map(item => item.enhancedText || item.message.body)
+                        .map(item => {
+                            let messageText = item.enhancedText || item.message.body;
+                            
+                            // Add media URLs if present
+                            if (item.mediaUrls && item.mediaUrls.length > 0) {
+                                messageText += '\nMedia attached:';
+                                item.mediaUrls.forEach(url => {
+                                    messageText += `\n- @${url}`;
+                                });
+                            }
+                            
+                            return messageText;
+                        })
                         .join('\n');
                     
                     // If we have user messages to process
