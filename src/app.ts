@@ -96,16 +96,19 @@ export class WhatsAppBotApp {
                 filter: true,
                 showExtensions: true,
                 showCommonExtensions: true,
-                tryItOutEnabled: true
+                tryItOutEnabled: true,
+                operationsSorter: 'alpha',
+                tagsSorter: 'alpha',
+                deepLinking: true,
+                showRequestHeaders: true
             },
             customCss: `
                 .swagger-ui .topbar { display: none }
+                .swagger-ui .opblock .opblock-summary { cursor: pointer; }
+                .swagger-ui .opblock .opblock-summary:hover { background: #f7f7f7; }
                 ${monokaiCSS}
             `,
-            customSiteTitle: 'WhatsApp Bot API Documentation',
-            customfavIcon: '/favicon.ico',
-            customJs: 'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui-bundle.js',
-            customCssUrl: 'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui.css'
+            customSiteTitle: 'WhatsApp Bot API Documentation'
         }));
         
         // Create authentication middleware
