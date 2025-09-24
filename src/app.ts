@@ -85,6 +85,7 @@ export class WhatsAppBotApp {
             console.warn('⚠️ Monokai CSS file not found, using default Swagger theme');
         }
         
+        // Setup Swagger UI with proper static asset serving
         this.app.use('/documentation', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
             explorer: true,
             swaggerOptions: {
@@ -101,7 +102,10 @@ export class WhatsAppBotApp {
                 .swagger-ui .topbar { display: none }
                 ${monokaiCSS}
             `,
-            customSiteTitle: 'WhatsApp Bot API Documentation'
+            customSiteTitle: 'WhatsApp Bot API Documentation',
+            customfavIcon: '/favicon.ico',
+            customJs: 'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui-bundle.js',
+            customCssUrl: 'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui.css'
         }));
         
         // Create authentication middleware
