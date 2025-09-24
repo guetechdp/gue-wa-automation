@@ -87,6 +87,16 @@ export class WhatsAppBotApp {
         
         this.app.use('/documentation', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
             explorer: true,
+            swaggerOptions: {
+                docExpansion: 'list',
+                defaultModelsExpandDepth: 2,
+                defaultModelExpandDepth: 2,
+                displayRequestDuration: true,
+                filter: true,
+                showExtensions: true,
+                showCommonExtensions: true,
+                tryItOutEnabled: true
+            },
             customCss: `
                 .swagger-ui .topbar { display: none }
                 ${monokaiCSS}
