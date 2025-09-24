@@ -5,7 +5,7 @@ import axios from 'axios';
 import jwt from 'jsonwebtoken';
 
 export class MessageHandler {
-    private messageQueue: { [senderNumber: string]: Array<{ message: Message; timestamp: number }> } = {};
+    private messageQueue: { [senderNumber: string]: Array<{ message: Message; enhancedText?: string; timestamp: number }> } = {};
     private processingUsers: { [senderNumber: string]: number } = {};
     private env: Environment;
 
@@ -20,6 +20,21 @@ export class MessageHandler {
         console.log(`📨 MESSAGE RECEIVED from client ${clientId}:`, message.from);
         console.log("📨 MESSAGE BODY:", message.body);
         console.log("📨 MESSAGE TIMESTAMP:", new Date().toISOString());
+        
+        // Enhance message with quoted context if it's a reply
+        let enhancedMessage = message.body;
+        if (message.hasQuotedMsg) {
+            try {
+                const quoted = await message.getQuotedMessage();
+                if (quoted && quoted.body) {
+                    enhancedMessage = `Replying to this message: "${quoted.body}"\n${message.body}`;
+                    console.log(`📝 Enhanced message with quoted context: "${enhancedMessage}"`);
+                }
+            } catch (error) {
+                console.error('❌ Error getting quoted message:', error);
+                // Continue with original message if quoted message retrieval fails
+            }
+        }
         
         // Simple test - just reply to any message
         if (message.body === '!ping') {
@@ -51,18 +66,18 @@ export class MessageHandler {
         
         if (productionMode) {
             console.log("📨 Processing message in production mode");
-            await this.handleIncomingMessageWithQueue(clientId, senderNumber, message, 10000);
+            await this.handleIncomingMessageWithQueue(clientId, senderNumber, message, enhancedMessage, 10000);
         } else {
             if (allowedNumbers.includes(senderNumber)) {
                 console.log(`📨 Message from ${senderNumber} ignored (whitelisted).`);
             } else {
                 console.log("📨 Processing message in development mode");
-                await this.handleIncomingMessageWithQueue(clientId, senderNumber, message, 10000);
+                await this.handleIncomingMessageWithQueue(clientId, senderNumber, message, enhancedMessage, 10000);
             }
         }
     }
 
-    private async handleIncomingMessageWithQueue(clientId: string, sender: string, message: Message, delay: number = 10000): Promise<void> {
+    private async handleIncomingMessageWithQueue(clientId: string, sender: string, message: Message, enhancedMessage: string, delay: number = 10000): Promise<void> {
         console.log(`🔄 handleIncomingMessage called for ${sender} with delay ${delay}ms`);
         const senderNumber: string = sender;
         
@@ -82,6 +97,7 @@ export class MessageHandler {
         // Add current message to queue
         this.messageQueue[senderNumber].push({
             message,
+            enhancedText: enhancedMessage,
             timestamp: Date.now()
         });
     
@@ -103,16 +119,16 @@ export class MessageHandler {
                     // Get the chat reference
                     const chatRef: Chat = preReplyChat || await message.getChat();
                     
-                    // Combine all queued messages into one string
-                    const combinedUserMessages = queuedMessages
-                        .map(item => item.message.body)
+                    // Combine all queued messages into one string using enhanced text
+                    const finalCombinedMessages = queuedMessages
+                        .map(item => item.enhancedText || item.message.body)
                         .join('\n');
                     
                     // If we have user messages to process
-                    if (combinedUserMessages && combinedUserMessages.trim()) {
+                    if (finalCombinedMessages && finalCombinedMessages.trim()) {
                         console.log(`🔄 FINAL PROCESSING: ${queuedMessages.length} messages from ${senderNumber} after timer expired`);
-                        console.log(`📝 Combined messages: "${combinedUserMessages}"`);
-                        await this.sendMessage(clientId, senderNumber, combinedUserMessages, null, false, null);
+                        console.log(`📝 Combined messages: "${finalCombinedMessages}"`);
+                        await this.sendMessage(clientId, senderNumber, finalCombinedMessages, null, false, null);
                     } else {
                         console.log(`No valid messages to process for ${senderNumber}`);
                     }

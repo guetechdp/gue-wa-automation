@@ -455,6 +455,12 @@ export class WhatsAppClientManager {
         client.on('message', async (message: Message) => {
             console.log(`📨 Message received on client ${clientId} from:`, message.from);
             console.log(`📨 Message body:`, message.body);
+            console.log(`📨 Message quoted:`, message.hasQuotedMsg);
+            console.log(`📨 Message raw:`, message.hasQuotedMsg);
+            if (message.hasQuotedMsg) {
+                const quoted = await message.getQuotedMessage();
+                console.log('User replied to:', quoted.body);
+            }
             
             clientInfo.lastActivity = new Date();
             
