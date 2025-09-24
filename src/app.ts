@@ -85,27 +85,11 @@ export class WhatsAppBotApp {
             console.warn('⚠️ Monokai CSS file not found, using default Swagger theme');
         }
         
-        // Setup Swagger UI with proper static asset serving
+        // Setup Swagger UI with minimal configuration for debugging
         this.app.use('/documentation', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
             explorer: true,
-            swaggerOptions: {
-                docExpansion: 'list',
-                defaultModelsExpandDepth: 2,
-                defaultModelExpandDepth: 2,
-                displayRequestDuration: true,
-                filter: true,
-                showExtensions: true,
-                showCommonExtensions: true,
-                tryItOutEnabled: true,
-                operationsSorter: 'alpha',
-                tagsSorter: 'alpha',
-                deepLinking: true,
-                showRequestHeaders: true
-            },
             customCss: `
                 .swagger-ui .topbar { display: none }
-                .swagger-ui .opblock .opblock-summary { cursor: pointer; }
-                .swagger-ui .opblock .opblock-summary:hover { background: #f7f7f7; }
                 ${monokaiCSS}
             `,
             customSiteTitle: 'WhatsApp Bot API Documentation'
