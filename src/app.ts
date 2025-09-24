@@ -89,6 +89,7 @@ export class WhatsAppBotApp {
         this.app.use('/documentation', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
             explorer: true,
             swaggerOptions: {
+                url: null,
                 docExpansion: 'list',
                 defaultModelsExpandDepth: 2,
                 defaultModelExpandDepth: 2,
@@ -108,7 +109,8 @@ export class WhatsAppBotApp {
                 .swagger-ui .opblock .opblock-summary:hover { background: #f7f7f7; }
                 ${monokaiCSS}
             `,
-            customSiteTitle: 'WhatsApp Bot API Documentation'
+            customSiteTitle: 'WhatsApp Bot API Documentation',
+            customfavIcon: '/favicon.ico'
         }));
         
         // Create authentication middleware
