@@ -5,7 +5,7 @@ import axios from 'axios';
 import jwt from 'jsonwebtoken';
 import fs from 'fs';
 import path from 'path';
-import { v4 as uuidv4 } from 'uuid';
+import crypto from 'crypto';
 import FormData from 'form-data';
 
 export class MessageHandler {
@@ -47,7 +47,7 @@ export class MessageHandler {
 
             // Generate unique filename with proper extension
             const fileExtension = this.getFileExtensionFromMimeType(media.mimetype);
-            const filename = `${uuidv4()}${fileExtension}`;
+            const filename = `${crypto.randomUUID()}${fileExtension}`;
             const filePath = path.join(this.tempDir, filename);
 
             // Save media to temporary file
