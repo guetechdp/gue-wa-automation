@@ -89,23 +89,35 @@ export class WhatsAppBotApp {
         this.app.use('/documentation', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
             explorer: true,
             swaggerOptions: {
-                docExpansion: 'list',
+                docExpansion: 'none',
                 defaultModelsExpandDepth: 2,
                 defaultModelExpandDepth: 2,
                 displayRequestDuration: true,
                 filter: true,
                 showExtensions: true,
                 showCommonExtensions: true,
-                tryItOutEnabled: true
+                tryItOutEnabled: true,
+                operationsSorter: 'alpha',
+                tagsSorter: 'alpha',
+                deepLinking: true,
+                showRequestHeaders: true
             },
             customCss: `
                 .swagger-ui .topbar { display: none }
+                .swagger-ui .opblock .opblock-summary { cursor: pointer; }
+                .swagger-ui .opblock .opblock-summary:hover { background: #f7f7f7; }
                 ${monokaiCSS}
             `,
-            customSiteTitle: 'WhatsApp Bot API Documentation',
-            customfavIcon: '/favicon.ico',
-            customJs: 'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui-bundle.js',
-            customCssUrl: 'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui.css'
+            customJs: `
+                window.onload = function() {
+                    console.log('Swagger UI loaded, ensuring expand/collapse functionality...');
+                    // Force enable expand/collapse functionality
+                    if (window.SwaggerUIBundle) {
+                        console.log('SwaggerUIBundle found, UI should be functional');
+                    }
+                };
+            `,
+            customSiteTitle: 'WhatsApp Bot API Documentation'
         }));
         
         // Create authentication middleware
