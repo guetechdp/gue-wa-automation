@@ -55,19 +55,11 @@ export class MessageHandler {
             fs.writeFileSync(filePath, buffer);
             console.log(`📎 Media saved to: ${filePath}`);
 
-            // Upload to tmpfile.link
+            // Upload to tmpfile.link (this method handles cleanup)
             const uploadUrl = await this.uploadToTmpFile(filePath, filename, media.mimetype);
             if (uploadUrl) {
                 mediaUrls.push(uploadUrl);
                 console.log(`📎 Media uploaded: ${uploadUrl}`);
-            }
-
-            // Clean up temporary file
-            try {
-                fs.unlinkSync(filePath);
-                console.log(`📎 Temporary file cleaned up: ${filePath}`);
-            } catch (cleanupError) {
-                console.error('❌ Error cleaning up temporary file:', cleanupError);
             }
 
         } catch (error) {
@@ -120,13 +112,31 @@ export class MessageHandler {
                 }
             });
 
+            // Clean up temporary file after successful upload
+            try {
+                fs.unlinkSync(filePath);
+                console.log('🧹 Cleaned up temporary file:', filename);
+            } catch (cleanupError) {
+                console.warn('⚠️ Failed to clean up temporary file:', filename, cleanupError);
+            }
+
             if (response.data && response.data.downloadLink) {
+                console.log('✅ Media uploaded successfully:', response.data.downloadLink);
                 return response.data.downloadLink;
             }
 
             return null;
         } catch (error) {
             console.error('❌ Error uploading to tmpfile.link:', error);
+            
+            // Clean up temporary file even if upload failed
+            try {
+                fs.unlinkSync(filePath);
+                console.log('🧹 Cleaned up temporary file after failed upload:', filename);
+            } catch (cleanupError) {
+                console.warn('⚠️ Failed to clean up temporary file after error:', filename, cleanupError);
+            }
+            
             return null;
         }
     }
