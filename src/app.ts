@@ -89,7 +89,7 @@ export class WhatsAppBotApp {
         this.app.use('/documentation', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
             explorer: true,
             swaggerOptions: {
-                docExpansion: 'none',
+                docExpansion: 'list',
                 defaultModelsExpandDepth: 2,
                 defaultModelExpandDepth: 2,
                 displayRequestDuration: true,
@@ -107,15 +107,6 @@ export class WhatsAppBotApp {
                 .swagger-ui .opblock .opblock-summary { cursor: pointer; }
                 .swagger-ui .opblock .opblock-summary:hover { background: #f7f7f7; }
                 ${monokaiCSS}
-            `,
-            customJs: `
-                window.onload = function() {
-                    console.log('Swagger UI loaded, ensuring expand/collapse functionality...');
-                    // Force enable expand/collapse functionality
-                    if (window.SwaggerUIBundle) {
-                        console.log('SwaggerUIBundle found, UI should be functional');
-                    }
-                };
             `,
             customSiteTitle: 'WhatsApp Bot API Documentation'
         }));
