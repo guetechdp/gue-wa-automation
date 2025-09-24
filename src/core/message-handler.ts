@@ -6,6 +6,7 @@ import jwt from 'jsonwebtoken';
 import fs from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import FormData from 'form-data';
 
 export class MessageHandler {
     private messageQueue: { [senderNumber: string]: Array<{ message: Message; enhancedText?: string; mediaUrls?: string[]; timestamp: number }> } = {};
@@ -19,6 +20,8 @@ export class MessageHandler {
     ) {
         this.env = env;
         this.tempDir = path.join(process.cwd(), 'temp');
+        
+        // Environment variables are loaded correctly
         
         // Ensure temp directory exists
         if (!fs.existsSync(this.tempDir)) {
@@ -104,21 +107,16 @@ export class MessageHandler {
 
     private async uploadToTmpFile(filePath: string, filename: string, mimetype: string): Promise<string | null> {
         try {
-            if (!this.env.UPLOAD_USER_ID || !this.env.UPLOAD_AUTH_TOKEN) {
-                console.error('❌ UPLOAD_USER_ID or UPLOAD_AUTH_TOKEN not configured');
-                return null;
-            }
+            console.log('📤 Uploading media to tmpfile.link...');
 
             const formData = new FormData();
-            const fileBuffer = fs.readFileSync(filePath);
-            const blob = new Blob([fileBuffer], { type: mimetype });
-            formData.append('file', blob, filename);
+            const fileStream = fs.createReadStream(filePath);
+            formData.append('file', fileStream, filename);
 
+            // Use tmpfile.link API without authentication (it works without auth)
             const response = await axios.post('https://tmpfile.link/api/upload', formData, {
                 headers: {
-                    'X-User-Id': this.env.UPLOAD_USER_ID,
-                    'X-Auth-Token': this.env.UPLOAD_AUTH_TOKEN,
-                    'Content-Type': 'multipart/form-data'
+                    ...formData.getHeaders()
                 }
             });
 

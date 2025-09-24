@@ -13,6 +13,41 @@ export class ApiController {
 
     /**
      * @swagger
+     * /api/debug-env:
+     *   get:
+     *     summary: Debug environment variables
+     *     description: Returns the status of environment variables for debugging
+     *     tags: [Debug]
+     *     responses:
+     *       200:
+     *         description: Environment variables status
+     *         content:
+     *           application/json:
+     *             schema:
+     *               type: object
+     *               properties:
+     *                 success:
+     *                   type: boolean
+     *                 env:
+     *                   type: object
+     *                   properties:
+     *                     UPLOAD_USER_ID:
+     *                       type: string
+     *                     UPLOAD_AUTH_TOKEN:
+     *                       type: string
+     */
+    debugEnv(req: Request, res: Response): void {
+        res.json({
+            success: true,
+            env: {
+                UPLOAD_USER_ID: this.env.UPLOAD_USER_ID ? 'SET' : 'NOT SET',
+                UPLOAD_AUTH_TOKEN: this.env.UPLOAD_AUTH_TOKEN ? 'SET' : 'NOT SET'
+            }
+        });
+    }
+
+    /**
+     * @swagger
      * /api/health:
      *   get:
      *     summary: Health check endpoint

@@ -7,8 +7,8 @@
  * It should only be run locally by authorized developers.
  * 
  * Usage:
- *   node scripts/generate-token.js
- *   node scripts/generate-token.js --payload '{"sub":"user123","role":"admin"}'
+ *   node scripts/generate-token.js [clientId] [agentCode]
+ *   node scripts/generate-token.js official-docs-test goa-konsul
  */
 
 require('dotenv/config');
@@ -23,32 +23,20 @@ async function generateToken() {
             process.exit(1);
         }
 
-        // Parse custom payload from command line arguments
-        let customPayload = {};
+        // Parse command line arguments
         const args = process.argv.slice(2);
-        if (args.includes('--payload')) {
-            const payloadIndex = args.indexOf('--payload');
-            if (payloadIndex + 1 < args.length) {
-                try {
-                    customPayload = JSON.parse(args[payloadIndex + 1]);
-                } catch (error) {
-                    console.error('❌ Invalid JSON in --payload argument');
-                    process.exit(1);
-                }
-            }
-        }
+        const clientId = args[0] || 'test-client';
+        const agentCode = args[1] || 'test-agent';
 
-        // Default payload
-        const defaultPayload = {
-            sub: 'admin-user',
+        // Generate payload for WhatsApp API
+        const payload = {
+            clientId: clientId,
+            agentCode: agentCode,
             iat: Math.floor(Date.now() / 1000),
             exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60), // 24 hours
             role: 'admin',
             name: 'Admin User'
         };
-
-        // Merge with custom payload
-        const payload = { ...defaultPayload, ...customPayload };
 
         // Generate token using jsonwebtoken
         const jwt = require('jsonwebtoken');
