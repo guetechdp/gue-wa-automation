@@ -103,16 +103,36 @@ export class MessageHandler {
                     // Get the chat reference
                     const chatRef: Chat = preReplyChat || await message.getChat();
                     
-                    // Combine all queued messages into one string
-                    const combinedUserMessages = queuedMessages
-                        .map(item => item.message.body)
-                        .join('\n');
+                    // Combine all queued messages into one string, including quoted message context
+                    const combinedUserMessages = await Promise.all(
+                        queuedMessages.map(async (item) => {
+                            let messageText = item.message.body;
+                            
+                            // Check if this message is a reply to another message
+                            if (item.message.hasQuotedMsg) {
+                                try {
+                                    const quoted = await item.message.getQuotedMessage();
+                                    if (quoted && quoted.body) {
+                                        messageText = `Replying to this message: "${quoted.body}"\n${messageText}`;
+                                        console.log(`📝 Enhanced message with quoted context: "${messageText}"`);
+                                    }
+                                } catch (error) {
+                                    console.error('❌ Error getting quoted message:', error);
+                                    // Continue with original message if quoted message retrieval fails
+                                }
+                            }
+                            
+                            return messageText;
+                        })
+                    );
+                    
+                    const finalCombinedMessages = combinedUserMessages.join('\n');
                     
                     // If we have user messages to process
-                    if (combinedUserMessages && combinedUserMessages.trim()) {
+                    if (finalCombinedMessages && finalCombinedMessages.trim()) {
                         console.log(`🔄 FINAL PROCESSING: ${queuedMessages.length} messages from ${senderNumber} after timer expired`);
-                        console.log(`📝 Combined messages: "${combinedUserMessages}"`);
-                        await this.sendMessage(clientId, senderNumber, combinedUserMessages, null, false, null);
+                        console.log(`📝 Combined messages: "${finalCombinedMessages}"`);
+                        await this.sendMessage(clientId, senderNumber, finalCombinedMessages, null, false, null);
                     } else {
                         console.log(`No valid messages to process for ${senderNumber}`);
                     }
