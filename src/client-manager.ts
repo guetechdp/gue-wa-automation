@@ -45,13 +45,39 @@ export class WhatsAppClientManager {
     }
 
     private startHealthCheck(): void {
-        const interval = this.config.healthCheckIntervalMs || 30000; // 30 seconds default
+        const interval = this.config.healthCheckIntervalMs || 120000; // 2 minutes default
         
         this.healthCheckInterval = setInterval(async () => {
             await this.performHealthCheck();
+            await this.performMemoryCleanup();
         }, interval);
         
         console.log(`🏥 Health check started with ${interval}ms interval`);
+    }
+
+    private async performMemoryCleanup(): Promise<void> {
+        try {
+            // Clean up disconnected clients
+            const disconnectedClients = Array.from(this.clients.entries())
+                .filter(([_, clientInfo]) => clientInfo.status === 'disconnected' || clientInfo.status === 'error');
+            
+            for (const [clientId, clientInfo] of disconnectedClients) {
+                try {
+                    await this.cleanupClient(clientId);
+                    this.clients.delete(clientId);
+                    console.log(`🧹 Cleaned up disconnected client: ${clientId}`);
+                } catch (error) {
+                    console.warn(`⚠️ Failed to cleanup client ${clientId}:`, error);
+                }
+            }
+
+            // Force garbage collection if available
+            if (global.gc) {
+                global.gc!();
+            }
+        } catch (error) {
+            console.warn('⚠️ Memory cleanup failed:', error);
+        }
     }
 
     private async performHealthCheck(): Promise<void> {
@@ -957,6 +983,27 @@ export class WhatsAppClientManager {
                 clientInfo.client.removeListener('session_saved_notification', onSessionSaved);
             }, timeoutMs);
         });
+    }
+
+    private async cleanupClient(clientId: string): Promise<void> {
+        const clientInfo = this.clients.get(clientId);
+        if (!clientInfo) {
+            return;
+        }
+
+        try {
+            // Disconnect the client
+            if (clientInfo.client) {
+                await clientInfo.client.destroy();
+            }
+            
+            // Clear retry attempts
+            this.retryAttempts.delete(clientId);
+            
+            console.log(`🧹 Client ${clientId} cleaned up successfully`);
+        } catch (error) {
+            console.warn(`⚠️ Error cleaning up client ${clientId}:`, error);
+        }
     }
 
     public async gracefulShutdown(): Promise<void> {
