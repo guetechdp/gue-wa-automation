@@ -34,10 +34,10 @@ export class WhatsAppBotApp {
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
                 
-                // Memory optimization
+                // Memory optimization (adjusted for stability)
                 '--memory-pressure-off',
-                '--max_old_space_size=512',
-                '--max-heap-size=512',
+                '--max_old_space_size=1024',
+                '--max-heap-size=1024',
                 '--disable-background-timer-throttling',
                 '--disable-backgrounding-occluded-windows',
                 '--disable-renderer-backgrounding',
@@ -56,7 +56,7 @@ export class WhatsAppBotApp {
                 '--disable-translate',
                 '--disable-web-security',
                 
-                // Performance optimization
+                // Performance optimization (removed --single-process for stability)
                 '--disable-accelerated-2d-canvas',
                 '--disable-gpu',
                 '--disable-gpu-sandbox',
@@ -64,13 +64,10 @@ export class WhatsAppBotApp {
                 '--disable-features=VizDisplayCompositor',
                 '--no-first-run',
                 '--no-zygote',
-                '--single-process',
                 '--no-default-browser-check',
                 
-                // Resource limits
+                // Resource limits (adjusted for stability)
                 '--memory-pressure-off',
-                '--aggressive-cache-discard',
-                '--enable-aggressive-domstorage-flushing',
                 '--disable-background-timer-throttling',
                 '--disable-renderer-backgrounding',
                 '--disable-backgrounding-occluded-windows',

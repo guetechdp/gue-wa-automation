@@ -110,15 +110,31 @@ export class WhatsAppClientManager {
                     } catch (error) {
                         console.warn(`⚠️ Health check failed for client ${clientInfo.clientId}:`, error);
                         
-                        // Check if this is a "Target closed" error (user logout)
-                        const isTargetClosed = error instanceof Error && 
+                        // Check if this is a session-related error
+                        const isSessionError = error instanceof Error && 
                             (error.message.includes('Target closed') || 
                              error.message.includes('Execution context was destroyed') ||
-                             error.message.includes('Session closed'));
+                             error.message.includes('Session closed') ||
+                             error.message.includes('Protocol error'));
                         
-                        if (isTargetClosed) {
-                            console.log(`🔍 Detected user logout for client ${clientInfo.clientId}. Resetting to QR scanning.`);
-                            await this.resetClientToQRScanning(clientInfo.clientId);
+                        if (isSessionError) {
+                            console.log(`🔍 Detected session error for client ${clientInfo.clientId}. Attempting recovery...`);
+                            
+                            // Try to recover the session first
+                            try {
+                                const state = await clientInfo.client.getState();
+                                if (state === 'UNPAIRED' || state === 'UNLAUNCHED') {
+                                    console.log(`🔍 Client ${clientInfo.clientId} state is ${state}. Resetting to QR scanning.`);
+                                    await this.resetClientToQRScanning(clientInfo.clientId);
+                                } else {
+                                    console.log(`🔍 Client ${clientInfo.clientId} state is ${state}. Marking as disconnected for recovery.`);
+                                    clientInfo.status = 'disconnected';
+                                    clientInfo.isReady = false;
+                                }
+                            } catch (recoveryError) {
+                                console.error(`❌ Session recovery failed for client ${clientInfo.clientId}:`, recoveryError);
+                                await this.resetClientToQRScanning(clientInfo.clientId);
+                            }
                         } else {
                             clientInfo.status = 'error';
                             clientInfo.isReady = false;
