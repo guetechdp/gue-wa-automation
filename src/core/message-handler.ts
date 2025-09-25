@@ -13,6 +13,8 @@ export class MessageHandler {
     private processingUsers: { [senderNumber: string]: number } = {};
     private env: Environment;
     private tempDir: string;
+    private readonly MAX_QUEUE_SIZE = 100; // Maximum messages per user
+    private readonly MAX_QUEUE_AGE = 300000; // 5 minutes in milliseconds
 
     constructor(
         private whatsappService: WhatsAppService,
@@ -26,6 +28,49 @@ export class MessageHandler {
         // Ensure temp directory exists
         if (!fs.existsSync(this.tempDir)) {
             fs.mkdirSync(this.tempDir, { recursive: true });
+        }
+
+        // Start queue cleanup interval
+        this.startQueueCleanup();
+    }
+
+    private startQueueCleanup(): void {
+        // Clean up old messages every 2 minutes
+        setInterval(() => {
+            this.cleanupMessageQueue();
+        }, 120000); // 2 minutes
+    }
+
+    private cleanupMessageQueue(): void {
+        const now = Date.now();
+        let totalCleaned = 0;
+
+        for (const [senderNumber, messages] of Object.entries(this.messageQueue)) {
+            // Remove old messages
+            const validMessages = messages.filter(msg => {
+                const age = now - msg.timestamp;
+                return age < this.MAX_QUEUE_AGE;
+            });
+
+            // Limit queue size
+            if (validMessages.length > this.MAX_QUEUE_SIZE) {
+                validMessages.splice(0, validMessages.length - this.MAX_QUEUE_SIZE);
+            }
+
+            const cleaned = messages.length - validMessages.length;
+            if (cleaned > 0) {
+                this.messageQueue[senderNumber] = validMessages;
+                totalCleaned += cleaned;
+            }
+
+            // Remove empty queues
+            if (validMessages.length === 0) {
+                delete this.messageQueue[senderNumber];
+            }
+        }
+
+        if (totalCleaned > 0) {
+            console.log(`🧹 Cleaned up ${totalCleaned} old messages from queue`);
         }
     }
 
@@ -50,10 +95,14 @@ export class MessageHandler {
             const filename = `${crypto.randomUUID()}${fileExtension}`;
             const filePath = path.join(this.tempDir, filename);
 
-            // Save media to temporary file
+            // Save media to temporary file with memory optimization
             const buffer = Buffer.from(media.data, 'base64');
             fs.writeFileSync(filePath, buffer);
-            console.log(`📎 Media saved to: ${filePath}`);
+            
+            // Clear the buffer from memory immediately
+            buffer.fill(0);
+            
+            console.log(`📎 Media saved to: ${filePath} (${Math.round(buffer.length / 1024)}KB)`);
 
             // Upload to tmpfile.link (this method handles cleanup)
             const uploadUrl = await this.uploadToTmpFile(filePath, filename, media.mimetype);

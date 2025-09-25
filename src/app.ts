@@ -29,41 +29,91 @@ export class WhatsAppBotApp {
         const whatsappConfig = {
             chromiumPath: env.CHROMIUM_PATH || '/usr/bin/chromium-browser',
             puppeteerArgs: [
+                // Security and sandbox
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
-                '--disable-accelerated-2d-canvas',
-                '--no-first-run',
-                '--no-zygote',
-                '--disable-gpu',
+                
+                // Memory optimization
+                '--memory-pressure-off',
+                '--max_old_space_size=512',
+                '--max-heap-size=512',
                 '--disable-background-timer-throttling',
                 '--disable-backgrounding-occluded-windows',
                 '--disable-renderer-backgrounding',
-                '--disable-features=TranslateUI',
-                '--disable-ipc-flooding-protection',
-                '--disable-extensions',
+                '--disable-background-networking',
+                '--disable-background-sync',
+                '--disable-client-side-phishing-detection',
+                '--disable-component-extensions-with-background-pages',
                 '--disable-default-apps',
+                '--disable-extensions',
+                '--disable-features=TranslateUI,BlinkGenPropertyTrees',
+                '--disable-hang-monitor',
+                '--disable-ipc-flooding-protection',
+                '--disable-popup-blocking',
+                '--disable-prompt-on-repost',
                 '--disable-sync',
                 '--disable-translate',
+                '--disable-web-security',
+                
+                // Performance optimization
+                '--disable-accelerated-2d-canvas',
+                '--disable-gpu',
+                '--disable-gpu-sandbox',
+                '--disable-software-rasterizer',
+                '--disable-features=VizDisplayCompositor',
+                '--no-first-run',
+                '--no-zygote',
+                '--single-process',
+                '--no-default-browser-check',
+                
+                // Resource limits
+                '--memory-pressure-off',
+                '--aggressive-cache-discard',
+                '--enable-aggressive-domstorage-flushing',
+                '--disable-background-timer-throttling',
+                '--disable-renderer-backgrounding',
+                '--disable-backgrounding-occluded-windows',
+                
+                // Network optimization
+                '--disable-background-networking',
+                '--disable-background-sync',
+                '--disable-client-side-phishing-detection',
+                '--disable-component-extensions-with-background-pages',
+                '--disable-default-apps',
+                '--disable-extensions',
+                '--disable-features=TranslateUI,BlinkGenPropertyTrees',
+                '--disable-hang-monitor',
+                '--disable-ipc-flooding-protection',
+                '--disable-popup-blocking',
+                '--disable-prompt-on-repost',
+                '--disable-sync',
+                '--disable-translate',
+                '--disable-web-security',
+                
+                // UI optimization
                 '--hide-scrollbars',
-                '--metrics-recording-only',
                 '--mute-audio',
                 '--no-first-run',
                 '--safebrowsing-disable-auto-update',
+                
+                // SSL and certificates
                 '--ignore-ssl-errors',
                 '--ignore-certificate-errors',
                 '--ignore-certificate-errors-spki-list',
-                '--ignore-certificate-errors-spki-list',
-                '--ignore-ssl-errors',
                 '--allow-running-insecure-content',
-                '--disable-web-security',
-                '--disable-features=VizDisplayCompositor'
+                
+                // Additional memory optimizations
+                '--enable-features=NetworkService,NetworkServiceLogging',
+                '--disable-features=VizDisplayCompositor,TranslateUI',
+                '--force-color-profile=srgb',
+                '--metrics-recording-only'
             ],
             mongoUri: env.MONGODB_URI || 'mongodb://localhost:27017/whatsapp-bot',
-            backupSyncIntervalMs: 300000, // 5 minutes
-            maxRetries: 5,
-            retryDelayMs: 2000,
-            healthCheckIntervalMs: 30000
+            backupSyncIntervalMs: 600000, // 10 minutes (reduced frequency)
+            maxRetries: 3, // Reduced retries
+            retryDelayMs: 5000, // Increased delay between retries
+            healthCheckIntervalMs: 120000 // 2 minutes (reduced frequency)
         };
         
         // Initialize services
@@ -74,6 +124,7 @@ export class WhatsAppBotApp {
         
         this.setupRoutes();
         this.setupMessageHandling();
+        this.setupMemoryOptimization();
     }
 
     private setupRoutes(): void {
@@ -120,6 +171,45 @@ export class WhatsAppBotApp {
         this.whatsappService.addMessageHandler(async (clientId: string, message: any) => {
             await this.messageHandler.handleIncomingMessage(clientId, message);
         });
+    }
+
+    private setupMemoryOptimization(): void {
+        // Set Node.js memory limits
+        if (global.gc) {
+            // Force garbage collection every 5 minutes
+            setInterval(() => {
+                try {
+                    global.gc!();
+                    console.log('🧹 Forced garbage collection completed');
+                } catch (error) {
+                    console.warn('⚠️ Garbage collection failed:', error);
+                }
+            }, 300000); // 5 minutes
+        }
+
+        // Memory monitoring
+        setInterval(() => {
+            const memUsage = process.memoryUsage();
+            const memUsageMB = {
+                rss: Math.round(memUsage.rss / 1024 / 1024),
+                heapTotal: Math.round(memUsage.heapTotal / 1024 / 1024),
+                heapUsed: Math.round(memUsage.heapUsed / 1024 / 1024),
+                external: Math.round(memUsage.external / 1024 / 1024)
+            };
+            
+            console.log(`📊 Memory Usage: RSS=${memUsageMB.rss}MB, Heap=${memUsageMB.heapUsed}/${memUsageMB.heapTotal}MB, External=${memUsageMB.external}MB`);
+            
+            // Alert if memory usage is high
+            if (memUsageMB.heapUsed > 400) { // 400MB threshold
+                console.warn(`⚠️ High memory usage detected: ${memUsageMB.heapUsed}MB`);
+                if (global.gc) {
+                    global.gc!();
+                    console.log('🧹 Emergency garbage collection triggered');
+                }
+            }
+        }, 60000); // Every minute
+
+        console.log('🔧 Memory optimization and monitoring enabled');
     }
 
     public async initialize(): Promise<void> {
