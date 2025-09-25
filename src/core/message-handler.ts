@@ -297,8 +297,40 @@ export class MessageHandler {
                 const queuedMessages = this.messageQueue[senderNumber] || [];
                 
                 if (queuedMessages.length > 0) {
-                    // Get the chat reference
-                    const chatRef: Chat = preReplyChat || await message.getChat();
+                    // Get the chat reference with session error handling
+                    let chatRef: Chat;
+                    try {
+                        chatRef = preReplyChat || await message.getChat();
+                    } catch (chatError: any) {
+                        // Handle session closed errors
+                        if (chatError.message.includes('Session closed') || 
+                            chatError.message.includes('Protocol error') ||
+                            chatError.message.includes('Target closed')) {
+                            console.warn(`⚠️ Session closed error for ${senderNumber}, attempting recovery...`);
+                            
+                            // Clear processing state
+                            delete this.messageQueue[senderNumber];
+                            delete this.processingUsers[senderNumber];
+                            delete (this.processingUsers as any)[`${senderNumber}_timer`];
+                            delete (this.processingUsers as any)[`${senderNumber}_readTypingTimer`];
+                            
+                            // Try to get client and check if it's still valid
+                            const client = this.whatsappService.getClient(clientId);
+                            if (client && client.isReady) {
+                                try {
+                                    // Try to get chat using client directly
+                                    chatRef = await client.client.getChatById(senderNumber);
+                                } catch (recoveryError: any) {
+                                    console.error(`❌ Failed to recover chat for ${senderNumber}:`, recoveryError);
+                                    throw new Error(`Session recovery failed: ${recoveryError.message}`);
+                                }
+                            } else {
+                                throw new Error(`Client ${clientId} is not ready for session recovery`);
+                            }
+                        } else {
+                            throw chatError;
+                        }
+                    }
                     
                     // Combine all queued messages into one string using enhanced text
                     const finalCombinedMessages = queuedMessages
