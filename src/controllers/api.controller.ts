@@ -48,6 +48,57 @@ export class ApiController {
 
     /**
      * @swagger
+     * /api/memory/stats:
+     *   get:
+     *     summary: Get memory usage statistics
+     *     tags: [System]
+     *     responses:
+     *       200:
+     *         description: Memory statistics retrieved successfully
+     *         content:
+     *           application/json:
+     *             schema:
+     *               type: object
+     *               properties:
+     *                 success:
+     *                   type: boolean
+     *                 memory:
+     *                   type: object
+     *                   properties:
+     *                     rss:
+     *                       type: number
+     *                       description: Resident Set Size in MB
+     *                     heapTotal:
+     *                       type: number
+     *                       description: Total heap size in MB
+     *                     heapUsed:
+     *                       type: number
+     *                       description: Used heap size in MB
+     *                     external:
+     *                       type: number
+     *                       description: External memory in MB
+     *                 timestamp:
+     *                   type: string
+     *                   format: date-time
+     */
+    getMemoryStats(req: Request, res: Response): void {
+        const memUsage = process.memoryUsage();
+        const memUsageMB = {
+            rss: Math.round(memUsage.rss / 1024 / 1024),
+            heapTotal: Math.round(memUsage.heapTotal / 1024 / 1024),
+            heapUsed: Math.round(memUsage.heapUsed / 1024 / 1024),
+            external: Math.round(memUsage.external / 1024 / 1024)
+        };
+        
+        res.json({
+            success: true,
+            memory: memUsageMB,
+            timestamp: new Date().toISOString()
+        });
+    }
+
+    /**
+     * @swagger
      * /api/health:
      *   get:
      *     summary: Health check endpoint

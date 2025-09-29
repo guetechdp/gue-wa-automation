@@ -36,10 +36,10 @@ export class WhatsAppBotApp {
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
                 
-                // Memory optimization (adjusted for stability)
+                // Memory optimization (reduced limits for better efficiency)
                 '--memory-pressure-off',
-                '--max_old_space_size=1024',
-                '--max-heap-size=1024',
+                '--max_old_space_size=512',
+                '--max-heap-size=512',
                 '--disable-background-timer-throttling',
                 '--disable-backgrounding-occluded-windows',
                 '--disable-renderer-backgrounding',
@@ -67,6 +67,11 @@ export class WhatsAppBotApp {
                 '--no-first-run',
                 '--no-zygote',
                 '--no-default-browser-check',
+                
+                // Additional memory optimization flags
+                '--aggressive-cache-discard',
+                '--enable-aggressive-domstorage-flushing',
+                '--disable-background-mode',
                 
                 // Resource limits (adjusted for stability)
                 '--memory-pressure-off',
@@ -112,7 +117,7 @@ export class WhatsAppBotApp {
             backupSyncIntervalMs: 600000, // 10 minutes (reduced frequency)
             maxRetries: 3, // Reduced retries
             retryDelayMs: 5000, // Increased delay between retries
-            healthCheckIntervalMs: 120000 // 2 minutes (reduced frequency)
+            healthCheckIntervalMs: 600000 // 10 minutes (optimized for memory efficiency)
         };
         
         // Initialize services
@@ -161,6 +166,7 @@ export class WhatsAppBotApp {
         
         // Legacy routes for backward compatibility
         this.app.get('/health', (req, res) => this.apiController.healthCheck(req, res));
+        this.app.get('/memory/stats', (req, res) => this.apiController.getMemoryStats(req, res));
         this.app.get('/test', (req, res) => this.apiController.testClient(req, res));
         this.app.get('/qr', (req, res) => this.apiController.getQRCode(req, res));
         this.app.get('/qr/status', (req, res) => this.apiController.getQRStatus(req, res));
@@ -195,20 +201,37 @@ export class WhatsAppBotApp {
     }
 
     private setupMemoryOptimization(): void {
-        // Set Node.js memory limits
+        // Memory tracking variables for intelligent management
+        let lastMemoryUsage: NodeJS.MemoryUsage | null = null;
+        let memoryTrend: 'increasing' | 'decreasing' | 'stable' = 'stable';
+        let consecutiveHighMemoryChecks = 0;
+        
+        // Smart garbage collection with adaptive intervals
         if (global.gc) {
-            // Force garbage collection every 5 minutes
             setInterval(() => {
                 try {
-                    global.gc!();
-                    console.log('🧹 Forced garbage collection completed');
+                    const memUsage = process.memoryUsage();
+                    const heapUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
+                    
+                    // Adaptive GC based on memory usage
+                    if (heapUsedMB > 300) {
+                        // Aggressive GC for high memory
+                        global.gc!();
+                        setTimeout(() => global.gc!(), 100);
+                        console.log('🧹 Aggressive garbage collection completed');
+                    } else if (heapUsedMB > 200) {
+                        // Standard GC for medium memory
+                        global.gc!();
+                        console.log('🧹 Standard garbage collection completed');
+                    }
+                    // Skip GC for low memory usage to avoid overhead
                 } catch (error) {
                     console.warn('⚠️ Garbage collection failed:', error);
                 }
-            }, 300000); // 5 minutes
+            }, 600000); // 10 minutes (increased from 5 minutes)
         }
 
-        // Memory monitoring
+        // Optimized memory monitoring (reduced frequency for better performance)
         setInterval(() => {
             const memUsage = process.memoryUsage();
             const memUsageMB = {
@@ -217,20 +240,51 @@ export class WhatsAppBotApp {
                 heapUsed: Math.round(memUsage.heapUsed / 1024 / 1024),
                 external: Math.round(memUsage.external / 1024 / 1024)
             };
-            
-            console.log(`📊 Memory Usage: RSS=${memUsageMB.rss}MB, Heap=${memUsageMB.heapUsed}/${memUsageMB.heapTotal}MB, External=${memUsageMB.external}MB`);
-            
-            // Alert if memory usage is high
-            if (memUsageMB.heapUsed > 400) { // 400MB threshold
-                console.warn(`⚠️ High memory usage detected: ${memUsageMB.heapUsed}MB`);
-                if (global.gc) {
-                    global.gc!();
-                    console.log('🧹 Emergency garbage collection triggered');
+
+            // Analyze memory trend for intelligent management
+            if (lastMemoryUsage) {
+                const heapDiff = memUsage.heapUsed - lastMemoryUsage.heapUsed;
+                if (heapDiff > 10 * 1024 * 1024) { // 10MB increase
+                    memoryTrend = 'increasing';
+                } else if (heapDiff < -10 * 1024 * 1024) { // 10MB decrease
+                    memoryTrend = 'decreasing';
+                } else {
+                    memoryTrend = 'stable';
                 }
             }
-        }, 60000); // Every minute
+            lastMemoryUsage = memUsage;
 
-        console.log('🔧 Memory optimization and monitoring enabled');
+            // Smart logging - only log when significant or high usage
+            if (memUsageMB.heapUsed >= 200 || memUsageMB.rss >= 100) {
+                console.log(`📊 Memory Usage: RSS=${memUsageMB.rss}MB, Heap=${memUsageMB.heapUsed}/${memUsageMB.heapTotal}MB, External=${memUsageMB.external}MB`);
+                consecutiveHighMemoryChecks++;
+            } else {
+                consecutiveHighMemoryChecks = 0;
+            }
+
+            // Adaptive memory management with multiple thresholds
+            if (memUsageMB.heapUsed >= 400) {
+                console.warn(`🚨 CRITICAL memory usage: ${memUsageMB.heapUsed}MB - Emergency cleanup triggered`);
+                if (global.gc) {
+                    global.gc!();
+                    setTimeout(() => global.gc!(), 100);
+                    setTimeout(() => global.gc!(), 200);
+                }
+            } else if (memUsageMB.heapUsed >= 300) {
+                console.warn(`⚠️ High memory usage: ${memUsageMB.heapUsed}MB - Aggressive cleanup triggered`);
+                if (global.gc) {
+                    global.gc!();
+                    setTimeout(() => global.gc!(), 100);
+                }
+            } else if (memUsageMB.heapUsed >= 200 && memoryTrend === 'increasing') {
+                console.log(`📈 Memory trend: increasing - Proactive cleanup triggered`);
+                if (global.gc) {
+                    global.gc!();
+                }
+            }
+        }, 300000); // Every 5 minutes (reduced from 1 minute)
+
+        console.log('🧠 Advanced memory optimization enabled');
     }
 
     public async initialize(): Promise<void> {
