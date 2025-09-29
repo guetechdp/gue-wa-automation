@@ -9,6 +9,7 @@ import { createApiRoutes } from './routes/api.routes';
 import { Environment } from './types';
 import { swaggerSpec } from './config/swagger';
 import { createAuthMiddleware } from './middleware/auth.middleware';
+import { AutoRestartService } from './services/auto-restart.service';
 import fs from 'fs';
 
 export class WhatsAppBotApp {
@@ -17,6 +18,7 @@ export class WhatsAppBotApp {
     private messageHandler: MessageHandler;
     private whatsappController: WhatsAppController;
     private apiController: ApiController;
+    private autoRestartService: AutoRestartService;
 
     constructor(private env: Environment) {
         this.app = express();
@@ -119,6 +121,11 @@ export class WhatsAppBotApp {
         this.whatsappController = new WhatsAppController(this.whatsappService);
         this.apiController = new ApiController(this.whatsappService, env);
         
+        // Initialize auto-restart service
+        this.autoRestartService = new AutoRestartService(env, async () => {
+            await this.gracefulShutdown();
+        });
+        
         this.setupRoutes();
         this.setupMessageHandling();
         this.setupMemoryOptimization();
@@ -159,6 +166,23 @@ export class WhatsAppBotApp {
         this.app.get('/qr/status', (req, res) => this.apiController.getQRStatus(req, res));
         this.app.get('/bot/status', (req, res) => this.apiController.getBotStatus(req, res));
         this.app.post('/bot/disconnect', (req, res) => this.apiController.disconnectClient(req, res));
+        
+        // Auto-restart status endpoint
+        this.app.get('/restart/status', (req, res) => {
+            const isEnabled = this.autoRestartService.isEnabled();
+            const cronExpression = this.autoRestartService.getCronExpression();
+            const nextExecution = this.autoRestartService.getNextExecution();
+            
+            res.json({
+                success: true,
+                autoRestart: {
+                    enabled: isEnabled,
+                    cronExpression: cronExpression || null,
+                    nextExecution: nextExecution ? nextExecution.toISOString() : null,
+                    nextExecutionHuman: nextExecution ? nextExecution.toLocaleString() : null
+                }
+            });
+        });
         this.app.get('/mongodb/status', (req, res) => this.apiController.getMongoDBStatus(req, res));
         this.app.get('/mongodb/debug', (req, res) => this.apiController.debugMongoDB(req, res));
     }
@@ -234,6 +258,9 @@ export class WhatsAppBotApp {
         try {
             await this.initialize();
             
+            // Initialize auto-restart service
+            this.autoRestartService.initialize();
+            
             this.app.listen(port, () => {
                 console.log(`🌐 WhatsApp Bot API server running on port ${port}`);
                 console.log(`📱 Health check: http://localhost:${port}/health`);
@@ -250,6 +277,9 @@ export class WhatsAppBotApp {
     public async gracefulShutdown(): Promise<void> {
         try {
             console.log('🛑 Shutting down WhatsApp Bot Application...');
+            
+            // Stop auto-restart service
+            this.autoRestartService.stop();
             
             // Cleanup message handler
             this.messageHandler.cleanup();
