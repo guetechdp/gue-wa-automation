@@ -13,8 +13,8 @@ export class MessageHandler {
     private processingUsers: { [senderNumber: string]: number } = {};
     private env: Environment;
     private tempDir: string;
-    private readonly MAX_QUEUE_SIZE = 100; // Maximum messages per user
-    private readonly MAX_QUEUE_AGE = 300000; // 5 minutes in milliseconds
+    private readonly MAX_QUEUE_SIZE = 50; // Reduced from 100 to 50 for memory optimization
+    private readonly MAX_QUEUE_AGE = 180000; // Reduced from 5 minutes to 3 minutes for memory optimization
 
     constructor(
         private whatsappService: WhatsAppService,
@@ -35,10 +35,10 @@ export class MessageHandler {
     }
 
     private startQueueCleanup(): void {
-        // Clean up old messages every 2 minutes
+        // Clean up old messages every 3 minutes (increased from 2 minutes)
         setInterval(() => {
             this.cleanupMessageQueue();
-        }, 120000); // 2 minutes
+        }, 180000); // 3 minutes
     }
 
     private cleanupMessageQueue(): void {
