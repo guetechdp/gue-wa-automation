@@ -33,13 +33,15 @@ export class AutoRestartService {
         
         // Schedule the restart job
         this.cronJob = cron.schedule(cronExpression, async () => {
+            console.log('🔄 CRON TRIGGERED: Auto-restart job executed!');
             await this.performRestart();
         }, {
-            timezone: 'UTC'
+            timezone: 'Asia/Jakarta'
         });
 
         // Start the cron job
         this.cronJob.start();
+        console.log('🔄 CRON JOB STARTED: Auto-restart cron job is now active');
         
         // Log next execution time
         this.logNextExecution();
