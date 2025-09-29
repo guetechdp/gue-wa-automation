@@ -16,7 +16,8 @@ const env: Environment = {
     AI_AGENT: process.env.AI_AGENT || 'FW',
     UPLOAD_USER_ID: process.env.UPLOAD_USER_ID || undefined,
     UPLOAD_AUTH_TOKEN: process.env.UPLOAD_AUTH_TOKEN || undefined,
-    AUTO_RESTART_CRON: process.env.AUTO_RESTART_CRON || undefined
+    AUTO_RESTART_CRON: process.env.AUTO_RESTART_CRON || undefined,
+    AUTO_RESTART_METHOD: process.env.AUTO_RESTART_METHOD || undefined
 };
 
 // Validate required environment variables
