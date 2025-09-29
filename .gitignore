@@ -57,3 +57,8 @@ data/
 
 # Temporary files for media uploads
 temp/
+
+# WhatsApp Web.js temporary session files
+RemoteAuth-*.zip
+*.wwebjs_auth
+*.wwebjs_cache

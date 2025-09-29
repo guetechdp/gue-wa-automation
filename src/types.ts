@@ -16,6 +16,7 @@ export interface Environment {
   MONGODB_URI?: string | undefined;
   UPLOAD_USER_ID?: string | undefined;
   UPLOAD_AUTH_TOKEN?: string | undefined;
+  AUTO_RESTART_CRON?: string | undefined;
 }
 
 // WhatsApp Service Configuration interface
