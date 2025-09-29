@@ -17,6 +17,7 @@ export interface Environment {
   UPLOAD_USER_ID?: string | undefined;
   UPLOAD_AUTH_TOKEN?: string | undefined;
   AUTO_RESTART_CRON?: string | undefined;
+  AUTO_RESTART_METHOD?: string | undefined;
 }
 
 // WhatsApp Service Configuration interface
